@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Flow Refactor - Test Runner</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 30px;
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    
+    .test-suite {
+      margin-bottom: 30px;
+      border-left: 4px solid #007bff;
+      padding-left: 20px;
+    }
+    
+    .test-suite h2 {
+      color: #007bff;
+      font-size: 18px;
+      margin-bottom: 15px;
+    }
+    
+    .test-case {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: #f9f9f9;
+      border-radius: 4px;
+      border-left: 3px solid #ddd;
+    }
+    
+    .test-case.pass {
+      border-left-color: #28a745;
+      background: #f0f8f4;
+    }
+    
+    .test-case.fail {
+      border-left-color: #dc3545;
+      background: #fdf5f5;
+    }
+    
+    .test-case.skip {
+      border-left-color: #ffc107;
+      background: #fffbf0;
+    }
+    
+    .test-name {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+    }
+    
+    .test-status {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .test-case.pass .test-status {
+      color: #28a745;
+    }
+    
+    .test-case.fail .test-status {
+      color: #dc3545;
+    }
+    
+    .test-case.skip .test-status {
+      color: #ffc107;
+    }
+    
+    .test-error {
+      margin-top: 8px;
+      padding: 8px;
+      background: white;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #dc3545;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    
+    .summary {
+      margin-top: 30px;
+      padding: 20px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      border-left: 4px solid #333;
+    }
+    
+    .summary h3 {
+      color: #333;
+      margin-bottom: 12px;
+      font-size: 16px;
+    }
+    
+    .summary-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+    }
+    
+    .stat {
+      padding: 12px;
+      background: white;
+      border-radius: 4px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+    }
+    
+    .stat.pass .stat-value {
+      color: #28a745;
+    }
+    
+    .stat.fail .stat-value {
+      color: #dc3545;
+    }
+    
+    .stat.skip .stat-value {
+      color: #ffc107;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #007bff;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+    }
+    
+    button {
+      padding: 10px 20px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    button:hover {
+      background: #0056b3;
+    }
+    
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Booking Flow Refactor - Test Runner</h1>
+    <p class="subtitle">Property-Based Tests for Function Consolidation</p>
+    
+    <div class="controls">
+      <button id="runTests" onclick="runTests()">Run Tests</button>
+      <button id="clearResults" onclick="clearResults()" disabled>Clear Results</button>
+    </div>
+    
+    <div id="results"></div>
+  </div>
+
+  <!-- Load booking.js first to define functions -->
+  <script src="js/booking.js"></script>
+  
+  <!-- Load test file -->
+  <script src="js/booking-consolidation.test.js"></script>
+  
+  <!-- Simple Jest-like test runner -->
+  <script>
+    let testResults = [];
+    let currentSuite = null;
+    
+    // Mock Jest functions
+    window.describe = function(name, fn) {
+      currentSuite = {
+        name: name,
+        tests: []
+      };
+      testResults.push(currentSuite);
+      fn();
+    };
+    
+    window.it = function(name, fn) {
+      if (!currentSuite) {
+        currentSuite = { name: 'Global', tests: [] };
+        testResults.push(currentSuite);
+      }
+      
+      const test = {
+        name: name,
+        status: 'pending',
+        error: null
+      };
+      
+      try {
+        fn();
+        test.status = 'pass';
+      } catch (error) {
+        test.status = 'fail';
+        test.error = error.message;
+      }
+      
+      currentSuite.tests.push(test);
+    };
+    
+    window.beforeEach = function(fn) {
+      // Store for later use if needed
+      if (!currentSuite) {
+        currentSuite = { name: 'Global', tests: [] };
+        testResults.push(currentSuite);
+      }
+      currentSuite.beforeEach = fn;
+    };
+    
+    window.expect = function(value) {
+      return {
+        toBe: function(expected) {
+          if (value !== expected) {
+            throw new Error(`Expected ${JSON.stringify(value)} to be ${JSON.stringify(expected)}`);
+          }
+        },
+        toEqual: function(expected) {
+          if (JSON.stringify(value) !== JSON.stringify(expected)) {
+            throw new Error(`Expected ${JSON.stringify(value)} to equal ${JSON.stringify(expected)}`);
+          }
+        },
+        toContain: function(expected) {
+          if (!value || !value.includes(expected)) {
+            throw new Error(`Expected ${JSON.stringify(value)} to contain ${JSON.stringify(expected)}`);
+          }
+        },
+        toBeNull: function() {
+          if (value !== null) {
+            throw new Error(`Expected ${JSON.stringify(value)} to be null`);
+          }
+        },
+        toBeUndefined: function() {
+          if (value !== undefined) {
+            throw new Error(`Expected ${JSON.stringify(value)} to be undefined`);
+          }
+        },
+        toBeDefined: function() {
+          if (value === undefined) {
+            throw new Error(`Expected value to be defined`);
+          }
+        },
+        toBeTruthy: function() {
+          if (!value) {
+            throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
+          }
+        },
+        toBeFalsy: function() {
+          if (value) {
+            throw new Error(`Expected ${JSON.stringify(value)} to be falsy`);
+          }
+        }
+      };
+    };
+    
+    function runTests() {
+      testResults = [];
+      currentSuite = null;
+      
+      // Re-run the test file
+      const script = document.createElement('script');
+      script.src = 'js/booking-consolidation.test.js?t=' + Date.now();
+      script.onload = function() {
+        renderResults();
+        document.getElementById('runTests').disabled = false;
+        document.getElementById('clearResults').disabled = false;
+      };
+      document.body.appendChild(script);
+      
+      document.getElementById('runTests').disabled = true;
+      document.getElementById('results').innerHTML = '<div class="loading"><div class="spinner"></div>Running tests...</div>';
+    }
+    
+    function renderResults() {
+      const resultsDiv = document.getElementById('results');
+      let html = '';
+      
+      let totalTests = 0;
+      let passedTests = 0;
+      let failedTests = 0;
+      
+      testResults.forEach(suite => {
+        html += `<div class="test-suite">
+          <h2>${suite.name}</h2>`;
+        
+        suite.tests.forEach(test => {
+          totalTests++;
+          const statusClass = test.status;
+          if (test.status === 'pass') passedTests++;
+          if (test.status === 'fail') failedTests++;
+          
+          html += `<div class="test-case ${statusClass}">
+            <div class="test-name">${test.name}</div>
+            <div class="test-status">${test.status}</div>`;
+          
+          if (test.error) {
+            html += `<div class="test-error">${test.error}</div>`;
+          }
+          
+          html += `</div>`;
+        });
+        
+        html += `</div>`;
+      });
+      
+      html += `<div class="summary">
+        <h3>Test Summary</h3>
+        <div class="summary-stats">
+          <div class="stat pass">
+            <div class="stat-value">${passedTests}</div>
+            <div class="stat-label">Passed</div>
+          </div>
+          <div class="stat fail">
+            <div class="stat-value">${failedTests}</div>
+            <div class="stat-label">Failed</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${totalTests}</div>
+            <div class="stat-label">Total</div>
+          </div>
+        </div>
+      </div>`;
+      
+      resultsDiv.innerHTML = html;
+    }
+    
+    function clearResults() {
+      testResults = [];
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('runTests').disabled = false;
+      document.getElementById('clearResults').disabled = true;
+    }
+  </script>
+</body>
+</html>
