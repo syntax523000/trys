@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reviews · BestBuddies Pet Grooming</title>
-  <link rel="stylesheet" href="../css/styles.css">
-  <link rel="stylesheet" href="../css/components.css">
-  <link rel="stylesheet" href="../css/index.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/index.css">
+  <link rel="stylesheet" href="css/reviews.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -25,6 +26,7 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="services.html">Services</a></li>
         <li><a href="reviews.html" class="active">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
         <li><a href="login.html">Login</a></li>
         <li><a href="booking.html" class="btn btn-primary" style="background:#000; color:#fff; border:2px solid #000;">Book Now</a></li>
       </ul>
@@ -44,6 +46,7 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="services.html">Services</a></li>
         <li><a href="reviews.html" class="active">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
         <li><a href="login.html">Login</a></li>
         <li><a href="booking.html">Book Now</a></li>
       </ul>
@@ -63,26 +66,10 @@
       </section>
 
       <section id="testimonials" class="section">
-        <h2 class="section-title">Top-rated by pet parents</h2>
-        <div class="grid grid-3">
-          <div class="card">
-            <div class="card-body">
-              <p style="font-style:italic; margin-bottom:1rem;">"BestBuddies gave my dog the best grooming experience! Professional, caring, and affordable."</p>
-              <p><strong>- Sarah M.</strong></p>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-body">
-              <p style="font-style:italic; margin-bottom:1rem;">"My cat usually hates grooming, but the team here made it stress-free. Highly recommend!"</p>
-              <p><strong>- Michael T.</strong></p>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-body">
-              <p style="font-style:italic; margin-bottom:1rem;">"Excellent service! My pet always comes back looking and feeling great. Worth every penny!"</p>
-              <p><strong>- Emily R.</strong></p>
-            </div>
-          </div>
+        <h2 class="section-title">⭐ Customer Reviews</h2>
+        <p style="text-align: center; color: var(--gray-600); margin-bottom: 1.5rem;">Real feedback from our happy fur parents</p>
+        <div id="customerReviewsContainer" class="grid grid-3">
+          <p class="empty-state">Loading reviews...</p>
         </div>
         <div style="margin-top:2rem;">
           <h3 style="margin-bottom:1rem;">🐾Before & After Galleries</h3>
@@ -125,12 +112,69 @@
   <script type="module" src="js/firebase-db.js"></script>
   <script src="js/main.js"></script>
   <script src="js/custom-alert.js"></script>
+  <script type="module" src="js/auth.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async function() {
+      // Load before/after gallery
       if (typeof renderCommunityReviewFeed === 'function') {
         await renderCommunityReviewFeed('publicReviewFeed', 9);
       }
+      
+      // Load customer text reviews
+      await loadCustomerReviews();
     });
+    
+    async function loadCustomerReviews() {
+      const container = document.getElementById('customerReviewsContainer');
+      if (!container) return;
+      
+      try {
+        let bookings = [];
+        if (typeof getBookings === 'function') {
+          bookings = await getBookings();
+        }
+        
+        // Filter bookings with reviews and ratings
+        const reviewedBookings = bookings
+          .filter(b => b.review && b.review.trim() && b.rating && b.rating > 0)
+          .sort((a, b) => (b.rating || 0) - (a.rating || 0)) // Sort by rating (highest first)
+          .slice(0, 9); // Show top 9 reviews
+        
+        if (!reviewedBookings.length) {
+          container.innerHTML = `
+            <div class="card" style="grid-column: 1 / -1; text-align: center; padding: 2rem;">
+              <p style="color: var(--gray-500);">No reviews yet. Be the first to share your experience!</p>
+            </div>
+          `;
+          return;
+        }
+        
+        container.innerHTML = reviewedBookings.map(booking => {
+          const stars = '⭐'.repeat(booking.rating || 0);
+          const emptyStars = '☆'.repeat(5 - (booking.rating || 0));
+          const customerName = booking.customerName || 'Happy Customer';
+          const petName = booking.petName || 'Pet';
+          const packageName = booking.packageName || 'Grooming Service';
+          
+          return `
+            <div class="card" style="border-left: 4px solid #f9a825;">
+              <div class="card-body">
+                <div style="margin-bottom: 0.5rem; font-size: 1.1rem;">${stars}${emptyStars}</div>
+                <p style="font-style: italic; margin-bottom: 1rem; color: var(--gray-700);">"${escapeHtml(booking.review)}"</p>
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <p style="margin: 0; font-weight: 600; color: var(--gray-900);">- ${escapeHtml(customerName)}</p>
+                  <span style="font-size: 0.8rem; color: var(--gray-500);">${escapeHtml(petName)} · ${escapeHtml(packageName)}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+      } catch (e) {
+        console.error('Failed to load customer reviews:', e);
+        container.innerHTML = '<p class="empty-state">Failed to load reviews.</p>';
+      }
+    }
   </script>
 </body>
 </html>

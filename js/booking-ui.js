@@ -144,8 +144,8 @@ function renderPackageCards(packages = [], selectedId = null) {
  * @param {Array} stepLabels - Optional labels for each step
  * @returns {string} HTML string
  */
-function renderStepIndicators(currentStep = 1, totalSteps = 4, stepLabels = []) {
-  const defaultLabels = ['Pet Type', 'Package', 'Schedule', 'Confirm'];
+function renderStepIndicators(currentStep = 1, totalSteps = 5, stepLabels = []) {
+  const defaultLabels = ['Policy', 'Pet Type', 'Package', 'Schedule', 'Details'];
   const labels = stepLabels.length ? stepLabels : defaultLabels;
   
   let html = '<div class="step-indicators" style="display: flex; gap: 1rem; margin-bottom: 2rem;">';
@@ -511,6 +511,23 @@ function formatTime(timeStr) {
   if (!timeStr) return '';
   
   try {
+    // Check if it's a time slot format like "9am-12pm" or "3pm-6pm"
+    if (timeStr.includes('am') || timeStr.includes('pm')) {
+      // Return the full time slot with proper formatting
+      const parts = timeStr.split('-');
+      const startTime = parts[0].trim();
+      const endTime = parts[1] ? parts[1].trim() : '';
+      
+      // Capitalize first letter
+      const formatted = startTime.charAt(0).toUpperCase() + startTime.slice(1);
+      if (endTime) {
+        const formattedEnd = endTime.charAt(0).toUpperCase() + endTime.slice(1);
+        return `${formatted} - ${formattedEnd}`;
+      }
+      return formatted;
+    }
+    
+    // Otherwise, assume HH:MM format
     const [hours, minutes] = timeStr.split(':');
     const hour = parseInt(hours, 10);
     const ampm = hour >= 12 ? 'PM' : 'AM';

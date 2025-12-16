@@ -32,24 +32,24 @@ const SINGLE_SERVICE_PRICING = {
     id: 'nail',
     label: 'Nail Trim',
     tiers: {
-      small: 'Nail Trim 5kg & below',
-      large: 'Nail Trim 30kg & above'
+      small: { label: 'Nail Trim 5kg & below', price: 50 },
+      large: { label: 'Nail Trim 30kg & above', price: 80 }
     }
   },
   ear: {
     id: 'ear',
     label: 'Ear Clean',
     tiers: {
-      small: 'Ear Clean 5kg & below',
-      large: 'Ear Clean 30kg & above'
+      small: { label: 'Ear Clean 5kg & below', price: 70 },
+      large: { label: 'Ear Clean 30kg & above', price: 90 }
     }
   },
   face: {
     id: 'face',
     label: 'Face Trim',
-    price: 250,
     tiers: {
-      flat: 'Face Trim - 250 pesos'
+      small: { label: 'Face Trim 5kg & below', price: 120 },
+      large: { label: 'Face Trim 30kg & above', price: 170 }
     }
   }
 };
@@ -832,6 +832,23 @@ function formatTime(timeString) {
   if (!timeString) return '';
   
   try {
+    // Check if it's a time slot format like "9am-12pm" or "3pm-6pm"
+    if (timeString.includes('am') || timeString.includes('pm')) {
+      // Return the full time slot with proper formatting
+      const parts = timeString.split('-');
+      const startTime = parts[0].trim();
+      const endTime = parts[1] ? parts[1].trim() : '';
+      
+      // Capitalize first letter
+      const formatted = startTime.charAt(0).toUpperCase() + startTime.slice(1);
+      if (endTime) {
+        const formattedEnd = endTime.charAt(0).toUpperCase() + endTime.slice(1);
+        return `${formatted} - ${formattedEnd}`;
+      }
+      return formatted;
+    }
+    
+    // Otherwise, assume HH:MM format
     const parts = timeString.split(':');
     if (parts.length < 2) return timeString;
     
@@ -891,48 +908,11 @@ function getSingleServicePrice(serviceId, weightLabel) {
   }
   const hasWeight = !!weightLabel;
   const category = hasWeight ? getWeightCategory(weightLabel) : 'small';
-  const tierLabel = service.tiers[category] || service.tiers.small;
-
-  let price = 0;
-
-  if (hasWeight && tierLabel) {
-    // Define pricing directly to avoid localStorage dependency
-    const SINGLE_SERVICE_TIERS = {
-      'Nail Trim 5kg & below': 50,
-      'Nail Trim 30kg & above': 80,
-      'Ear Clean 5kg & below': 70,
-      'Ear Clean 30kg & above': 90
-    };
-
-    // Try exact match first
-    if (tierLabel in SINGLE_SERVICE_TIERS) {
-      price = SINGLE_SERVICE_TIERS[tierLabel];
-    } else {
-      // Try normalized match
-      const normalizedSearch = normalizeWeightLabel(tierLabel);
-      for (const [key, value] of Object.entries(SINGLE_SERVICE_TIERS)) {
-        if (normalizeWeightLabel(key) === normalizedSearch) {
-          price = value;
-          break;
-        }
-      }
-
-      // Final fallback: check localStorage package data
-      if (!price) {
-        const packages = getPackages();
-        const packageData = packages.find(pkg => pkg.id === 'single-service');
-        if (packageData?.tiers) {
-          const matchingTier = packageData.tiers.find(t => t.label === tierLabel);
-          if (matchingTier) {
-            price = matchingTier.price;
-          } else {
-            const fallbackTier = packageData.tiers.find(t => normalizeWeightLabel(t.label) === normalizedSearch);
-            price = fallbackTier?.price || 0;
-          }
-        }
-      }
-    }
-  }
+  const tierData = service.tiers[category] || service.tiers.small;
+  
+  // Handle both old string format and new object format
+  const tierLabel = typeof tierData === 'string' ? tierData : tierData.label;
+  const price = typeof tierData === 'string' ? 0 : (tierData.price || 0);
 
   return {
     serviceId,
@@ -1046,8 +1026,14 @@ async function getPublicReviewEntries(limit = 8) {
     return [];
   }
 
+  // Filter bookings that have before/after images AND are marked as public by customer
+  // OR are featured by admin (isFeatured)
   const entries = bookings
-    .filter(booking => booking.beforeImage && booking.afterImage)
+    .filter(booking => {
+      const hasImages = booking.beforeImage && booking.afterImage;
+      const isPublic = booking.isPublicGallery === true || booking.isFeatured === true;
+      return hasImages && isPublic;
+    })
     .map(booking => {
       // Build service description from package and single services
       let serviceDescription = booking.packageName || 'Custom Service';
@@ -1771,7 +1757,103 @@ function initMobileDrawer() {
 // Initialize drawer on page load
 document.addEventListener('DOMContentLoaded', function () {
   initMobileDrawer();
+  // Update navigation based on login status
+  updateNavigationForUser();
 });
+
+/**
+ * Update navigation links based on user login status and role
+ * Shows Dashboard link (role-based) and Logout when logged in
+ * Shows Login when not logged in
+ */
+async function updateNavigationForUser() {
+  try {
+    let user = null;
+    if (typeof getCurrentUser === 'function') {
+      user = await getCurrentUser();
+    }
+
+    const navLinks = document.querySelector('.nav-links');
+    const mobileDrawerLinks = document.querySelector('.mobile-drawer-links');
+
+    if (!navLinks && !mobileDrawerLinks) return;
+
+    // Determine dashboard URL based on role
+    let dashboardUrl = 'customer-dashboard.html';
+    let dashboardLabel = 'Dashboard';
+    
+    if (user) {
+      const role = (user.role || '').toLowerCase();
+      if (role === 'admin') {
+        dashboardUrl = 'admin-dashboard.html';
+        dashboardLabel = 'Admin Dashboard';
+      } else if (role === 'groomer' || role === 'groomers' || role === 'staff') {
+        dashboardUrl = 'groomer-dashboard.html';
+        dashboardLabel = 'Groomer Dashboard';
+      } else {
+        dashboardUrl = 'customer-dashboard.html';
+        dashboardLabel = 'My Dashboard';
+      }
+    }
+
+    // Update desktop nav
+    if (navLinks) {
+      const loginLink = navLinks.querySelector('a[href="login.html"]');
+      const existingDashboardLink = navLinks.querySelector('a[href*="dashboard.html"]');
+      const existingLogoutLink = navLinks.querySelector('a[onclick*="logout"]');
+
+      if (user) {
+        // User is logged in - show Dashboard and Logout
+        if (loginLink) {
+          loginLink.href = dashboardUrl;
+          loginLink.textContent = dashboardLabel;
+        }
+        // Add logout if not exists
+        if (!existingLogoutLink && loginLink) {
+          const logoutLi = document.createElement('li');
+          logoutLi.innerHTML = '<a href="#" onclick="logout(event)">Logout</a>';
+          loginLink.parentElement.insertAdjacentElement('afterend', logoutLi);
+        }
+      } else {
+        // User not logged in - show Login
+        if (existingDashboardLink && existingDashboardLink.href.includes('dashboard')) {
+          existingDashboardLink.href = 'login.html';
+          existingDashboardLink.textContent = 'Login';
+        }
+      }
+    }
+
+    // Update mobile drawer nav
+    if (mobileDrawerLinks) {
+      const mobileLoginLink = mobileDrawerLinks.querySelector('a[href="login.html"]');
+      const mobileExistingDashboardLink = mobileDrawerLinks.querySelector('a[href*="dashboard.html"]');
+      const mobileExistingLogoutLink = mobileDrawerLinks.querySelector('a[onclick*="logout"]');
+
+      if (user) {
+        // User is logged in - show Dashboard and Logout
+        if (mobileLoginLink) {
+          mobileLoginLink.href = dashboardUrl;
+          mobileLoginLink.textContent = dashboardLabel;
+        }
+        // Add logout if not exists
+        if (!mobileExistingLogoutLink && mobileLoginLink) {
+          const logoutLi = document.createElement('li');
+          logoutLi.innerHTML = '<a href="#" onclick="logout(event)">Logout</a>';
+          mobileLoginLink.parentElement.insertAdjacentElement('afterend', logoutLi);
+        }
+      } else {
+        // User not logged in - show Login
+        if (mobileExistingDashboardLink && mobileExistingDashboardLink.href.includes('dashboard')) {
+          mobileExistingDashboardLink.href = 'login.html';
+          mobileExistingDashboardLink.textContent = 'Login';
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('updateNavigationForUser failed:', e);
+  }
+}
+window.updateNavigationForUser = updateNavigationForUser;
 window.getCustomerProfile = getCustomerProfile;
 window.saveCustomerProfile = saveCustomerProfile;
 window.getCustomerWarningInfo = getCustomerWarningInfo;

@@ -13,6 +13,8 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap"
     rel="stylesheet">
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 
 <body>
@@ -29,6 +31,7 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="services.html">Services</a></li>
         <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
         <li><a href="login.html">Login</a></li>
         <li><a href="#" onclick="handleBookNow()" class="btn btn-primary"
             style="background: #000; color: #fff; border: 2px solid #000;">Book Now</a></li>
@@ -49,6 +52,7 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="services.html">Services</a></li>
         <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
         <li><a href="login.html">Login</a></li>
         <li><a href="#" onclick="handleBookNow()">Book Now</a></li>
       </ul>
@@ -62,9 +66,10 @@
         <div class="card" style="background: #fff; border: 2px solid #000; position: relative;">
           <button onclick="document.getElementById('bookingPolicySection').style.display='none';"
             style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #000;">×</button>
-          <h3 style="margin-bottom:0.5rem; color: #000; font-weight: 700;">Important Booking Policy</h3>
+          <h3 style="margin-bottom:0.5rem; color: #000; font-weight: 700;">📋 Booking Policy</h3>
           <p style="color:#000; font-size:0.95rem;">
-            No refunds for missed bookings. Rescheduling requires a new booking. Need to lift a ban? Visit the store with your receipt or email BestBuddies@gmail.com
+            No refunds for missed bookings. Rescheduling requires a new booking. 
+            <a href="policy.html" style="color: #1976d2; text-decoration: underline; font-weight: 600;">View Full Policy →</a>
           </p>
         </div>
       </section>
@@ -84,20 +89,22 @@
       </section>
       </section>
 
-      <!-- Services Section -->
+      <!-- Services Section - Clean 2x2 Grid -->
       <section id="services" class="section">
         <h2 class="section-title">Our Grooming Packages</h2>
-        <div class="grid grid-3">
-          <!-- Service Card 1 -->
+        
+        <!-- 2x2 Grid Layout -->
+        <div class="grid grid-2" style="gap: 2rem; max-width: 900px; margin: 0 auto;">
+          
+          <!-- Service Card 1 - Full Package Basic -->
           <div class="service-card-hover">
             <div class="service-icon">
               <a href="assets/5.jpg"><img src="assets/5.jpg" alt="Full Package Basic"></a>
             </div>
             <div class="service-content">
               <div class="service-description">
-                <h3 class="service-title">✂️Full Package (Basic)</h3>
-                <p class="service-text">Bath & Dry · Brush/De-Shedding · Hair Cut (Basic) · Nail & Ear Clean · Foot Pad
-                  · Cologne</p>
+                <h3 class="service-title">✂️ Full Package (Basic)</h3>
+                <p class="service-text">Bath & Dry · Brush/De-Shedding · Hair Cut (Basic) · Nail & Ear Clean · Foot Pad · Cologne</p>
               </div>
               <div class="service-pricing">
                 <div class="pricing-list">
@@ -107,20 +114,19 @@
                   <div class="price-item">₱800<span>15.1–30kg</span></div>
                   <div class="price-item">₱920<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
 
-          <!-- Service Card 2 -->
+          <!-- Service Card 2 - Full Package Trimming & Styling -->
           <div class="service-card-hover">
             <div class="service-icon">
-              <a href="assets/2.jpg"><img src="assets/6.jpg" alt="Full Package Trimming & Styling"></a>
+              <a href="assets/6.jpg"><img src="assets/6.jpg" alt="Full Package Trimming & Styling"></a>
             </div>
             <div class="service-content">
               <div class="service-description">
-                <h3 class="service-title">✂️Full Package (Trimming & Styling)</h3>
+                <h3 class="service-title">✂️ Full Package (Trimming & Styling)</h3>
                 <p class="service-text">Everything in basic plus stylized haircut perfected for show-ready looks.</p>
               </div>
               <div class="service-pricing">
@@ -131,20 +137,19 @@
                   <div class="price-item">₱930<span>15.1–30kg</span></div>
                   <div class="price-item">₱1,050<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
 
-          <!-- Service Card 3 -->
+          <!-- Service Card 3 - Shampoo Bath 'n Bubble -->
           <div class="service-card-hover">
             <div class="service-icon">
-              <a href="assets/3.jpg"><img src="assets/7.jpg" alt="Shampoo Bath n Bubble"></a>
+              <a href="assets/7.jpg"><img src="assets/7.jpg" alt="Shampoo Bath n Bubble"></a>
             </div>
             <div class="service-content">
               <div class="service-description">
-                <h3 class="service-title">🚿Shampoo Bath 'n Bubble</h3>
+                <h3 class="service-title">🚿 Shampoo Bath 'n Bubble</h3>
                 <p class="service-text">Bath & Dry · Hygiene Trim · Nail/Ear Clean · Brush/De-Shedding · Cologne</p>
               </div>
               <div class="service-pricing">
@@ -155,21 +160,19 @@
                   <div class="price-item">₱600<span>15.1–30kg</span></div>
                   <div class="price-item">₱700<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
-        </div>
-        <div class="grid grid-3" style="margin-top:1.5rem;">
-          <!-- Service Card 4 -->
+
+          <!-- Service Card 4 - Single Services -->
           <div class="service-card-hover">
             <div class="service-icon">
-              <a href="assets/4.jpg"><img src="assets/8.jpg" alt="Single Services"></a>
+              <a href="assets/8.jpg"><img src="assets/8.jpg" alt="Single Services"></a>
             </div>
             <div class="service-content">
               <div class="service-description">
-                <h3 class="service-title">🐶Single Services</h3>
+                <h3 class="service-title">🐶 Single Services</h3>
                 <p class="service-text">Quick tune-ups for in-between spa days.</p>
               </div>
               <div class="service-pricing">
@@ -178,49 +181,18 @@
                   <div class="price-item">₱70–₱90<span>Ear Clean</span></div>
                   <div class="price-item">₱120–₱170<span>Facial Cut & Clean</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
-          <!-- Service Card 5 -->
-          <div class="service-card-hover">
-            <div class="service-icon">
-              <!-- <a href="assets/pics.jpg"><img src="assets/pics.jpg" alt="Add-ons"></a> -->
-            </div>
-            <div class="service-content">
-              <div class="service-description">
-                <h3 class="service-title">🪥🐶✂️Add-ons</h3>
-                <p class="service-text">Enhance your grooming experience with premium add-ons.</p>
-              </div>
-              <div class="service-pricing">
-                <div class="pricing-list">
-                  <div class="price-item">₱25<span>Toothbrush (take-home)</span></div>
-                  <div class="price-item">₱80–₱250<span>De-matting session</span></div>
-                </div>
-                <a href="#" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
-              </div>
-            </div>
-          </div>
-          <!-- Service Card 6 -->
-          <div class="service-card-hover">
-            <div class="service-icon">
-              <!-- <a href="assets/pics.jpg"><img src="assets/pics.jpg" alt="Booking Checklist"></a> -->
-            </div>
-            <div class="service-content">
-              <div class="service-description">
-                <h3 class="service-title">Booking Checklist</h3>
-                <p class="service-text">Owner's full name, address, contact number, pet's name, breed, age, weight,
-                  medical concerns, and latest vaccinations help us prep the perfect spa day.</p>
-              </div>
-              <div class="service-pricing">
-                <p style="text-align: center; color: #999; font-size: 0.9rem;">Required information for booking</p>
-                <a href="#" class="btn btn-primary btn-sm"
-                  style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
-              </div>
-            </div>
-          </div>
+          
+        </div>
+        
+        <!-- View All Services Link -->
+        <div style="text-align: center; margin-top: 2.5rem;">
+          <a href="services.html" class="btn btn-outline" style="border: 2px solid #000; color: #000; padding: 0.75rem 2rem;">
+            View All Services & Add-ons →
+          </a>
         </div>
       </section>
     </div>
@@ -231,6 +203,60 @@
     <button id="lightbox-close" onclick="closeLightbox()">✕</button>
     <img id="lightbox-image" src="" alt="Full size image">
   </div>
+
+  <!-- We Look Forward To Meeting You Section -->
+  <section id="contactSection" style="background: #f5f5f5; padding: 4rem 2rem; margin-top: 3rem; border-top: 3px solid #000;">
+    <div class="container">
+      <h2 style="text-align: center; font-style: italic; font-size: 2.2rem; font-weight: 700; color: #000; margin-bottom: 3rem;">
+        We Look Forward To Meeting You!
+      </h2>
+      
+      <div class="meet-you-grid" style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 3rem; align-items: center; max-width: 1000px; margin: 0 auto;">
+        
+        <!-- Left - Contact Info -->
+        <div style="text-align: left;">
+          <h4 style="font-weight: 700; margin-bottom: 1rem; color: #000; font-size: 1.1rem;">Visit us at:</h4>
+          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">Purok 6, Brgy. Buhangin Proper</p>
+          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">Davao City, Philippines</p>
+          <p style="margin: 1rem 0 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Phone:</strong> 0912-345-6789</p>
+          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Email:</strong> bestbuddiespetgrooming@gmail.com</p>
+          
+          <!-- Social Icons - Facebook, Instagram, TikTok -->
+          <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+            <a href="#" target="_blank" title="Facebook" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
+              <i class="fab fa-facebook-f"></i>
+            </a>
+            <a href="#" target="_blank" title="Instagram" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
+              <i class="fab fa-instagram"></i>
+            </a>
+            <a href="#" target="_blank" title="TikTok" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
+              <i class="fab fa-tiktok"></i>
+            </a>
+          </div>
+        </div>
+        
+        <!-- Center - Logo -->
+        <div style="text-align: center;">
+          <div style="width: 200px; height: 200px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); border: 4px solid #000;">
+            <img src="assets/logo.png" alt="BestBuddies Logo" style="width: 160px; height: 160px; object-fit: contain;">
+          </div>
+        </div>
+        
+        <!-- Right - Hours -->
+        <div style="text-align: right;">
+          <h4 style="font-weight: 700; margin-bottom: 1rem; color: #000; font-size: 1.1rem;">Grooming Hours:</h4>
+          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;"><span style="color: #666;">Sunday: Closed</span></p>
+          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;">Monday - Friday: 8am - 5pm</p>
+          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;">Saturday: 8am - 3pm</p>
+          
+          <h4 style="font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #000; font-size: 1.1rem;">Booking:</h4>
+          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">By Appointment Only</p>
+          <a href="#" onclick="handleBookNow()" style="display: inline-block; margin-top: 0.75rem; background: #000; color: white; padding: 0.5rem 1.25rem; border-radius: 20px; text-decoration: none; font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease;" onmouseover="this.style.background='#333'" onmouseout="this.style.background='#000'">Book Online →</a>
+        </div>
+        
+      </div>
+    </div>
+  </section>
 
   <footer>
     <div class="container">
@@ -244,6 +270,7 @@
   <script type="module" src="js/firebase-db.js"></script>
   <script src="js/main.js"></script>
   <script src="js/custom-alert.js"></script>
+  <script type="module" src="js/auth.js"></script>
   <script>
     function handleBookNow() {
       event.preventDefault();
@@ -256,6 +283,29 @@
         await renderFeaturedCutsGallery('homeFeaturedFeed', 4);
       }
     });
+    
+    // Responsive styles for "We Look Forward" section
+    const style = document.createElement('style');
+    style.textContent = `
+      @media (max-width: 768px) {
+        .meet-you-grid {
+          grid-template-columns: 1fr !important;
+          text-align: center !important;
+          gap: 2rem !important;
+        }
+        .meet-you-grid > div {
+          text-align: center !important;
+        }
+        .meet-you-grid > div:first-child > div:last-child {
+          justify-content: center !important;
+        }
+        #contactSection h2 {
+          font-size: 1.5rem !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    
   </script>
 </body>
 

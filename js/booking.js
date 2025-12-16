@@ -25,7 +25,7 @@ let bookingData = {
 };
 
 let currentStep = 1;
-const totalSteps = 4;
+const totalSteps = 5;
 const SINGLE_SERVICE_PACKAGE_ID = 'single-service';
 const SINGLE_SERVICE_OPTIONS = window.SINGLE_SERVICE_PRICING || {};
 
@@ -113,14 +113,17 @@ function updateAgeDropdownOptions() {
 
 // Initialize booking page
 async function initBooking() {
+  console.log('[initBooking] Starting booking page initialization...');
   try {
     // ensure packages resolved before any computeBookingCost / updateSummary calls
     if (typeof ensurePackagesLoaded === 'function') {
       await ensurePackagesLoaded();
+      console.log('[initBooking] Packages loaded successfully');
     } else if (typeof getPackages === 'function') {
       // fallback: await getPackages if it returns a Promise
       const pk = getPackages();
       if (pk && typeof pk.then === 'function') await pk;
+      console.log('[initBooking] Packages loaded via getPackages fallback');
     }
 
     // Restore booking data and step from sessionStorage if returning from auth
@@ -147,7 +150,7 @@ async function initBooking() {
     // If an edit marker exists, prefer that and jump to review step
     if (editingBookingId) {
       bookingData.editingBookingId = editingBookingId;
-      targetStep = 4;
+      targetStep = 5;
       // preserve merged bookingData for restore and remove marker
       sessionStorage.removeItem('editingBookingId');
     }
@@ -155,7 +158,7 @@ async function initBooking() {
     // If a cancel marker exists, set cancel id and jump to review step
     if (bookingCancelId) {
       bookingData.bookingCancelId = bookingCancelId;
-      targetStep = 4;
+      targetStep = 5;
       sessionStorage.removeItem('bookingCancelId');
     }
 
@@ -247,6 +250,10 @@ async function initBooking() {
     // Load packages (after listeners are set up)
     loadPackages();
     renderSingleServiceConfigurator();
+    updateReferenceCutsVisibility();
+    
+    // Enable/disable next button based on current step
+    enableNextButton();
   } catch (error) {
     console.error('Error initializing booking:', error);
     // Don't show alert for permission errors - user might not be logged in yet
@@ -324,12 +331,37 @@ function setupBookingListeners() {
   // Form inputs - use centralized event system
   setupFormInputsWithStateSync();
 
+  // Save Profile Toggle - show only for logged in users
+  const saveProfileSection = document.getElementById('saveProfileSection');
   const saveProfileToggle = document.getElementById('saveProfileToggle');
+  
+  // Check if user is logged in and show/hide save profile section
+  (async () => {
+    try {
+      const user = typeof getCurrentUser === 'function' ? await getCurrentUser() : null;
+      if (user && saveProfileSection) {
+        saveProfileSection.style.display = 'block';
+        console.log('[SaveProfile] User logged in, showing save profile toggle');
+      } else if (saveProfileSection) {
+        saveProfileSection.style.display = 'none';
+        console.log('[SaveProfile] User not logged in, hiding save profile toggle');
+      }
+    } catch (e) {
+      console.warn('[SaveProfile] Could not check user status:', e);
+    }
+  })();
+  
+  // Setup save profile toggle listener
   if (saveProfileToggle) {
     bookingData.saveProfile = saveProfileToggle.checked;
     saveProfileToggle.addEventListener('change', () => {
       bookingData.saveProfile = saveProfileToggle.checked;
+      console.log('[SaveProfile] Toggle changed:', bookingData.saveProfile);
+      saveBookingDataToSession();
     });
+  } else {
+    // Default to true if toggle not found
+    bookingData.saveProfile = true;
   }
 
   const loadProfileBtn = document.getElementById('loadProfileBtn');
@@ -460,10 +492,16 @@ function setupFormInputsWithStateSync() {
       if (this.checked) {
         // Update bookingData
         bookingData.petWeight = this.value;
+        console.log('[Weight] Selected:', this.value);
         
         // Trigger UI updates
         updateSummary();
         enableNextButton();
+        
+        // Re-render single service configurator to update prices based on weight
+        if (isSingleServicePackage()) {
+          renderSingleServiceConfigurator();
+        }
         updateSingleServicePriceLabels();
         
         // Auto-save to session
@@ -472,7 +510,47 @@ function setupFormInputsWithStateSync() {
     });
   });
   
-  // Vaccination status
+  // Vaccination status with mutual exclusion
+  const vaccAntiRabies = document.getElementById('vaccAntiRabies');
+  const vaccAntiParvo = document.getElementById('vaccAntiParvo');
+  const vaccNotVaccinated = document.getElementById('vaccNotVaccinated');
+  
+  // Setup mutual exclusion for vaccination checkboxes
+  if (vaccAntiRabies) {
+    vaccAntiRabies.addEventListener('change', function() {
+      if (this.checked && vaccNotVaccinated) {
+        vaccNotVaccinated.checked = false;
+        console.log('[Vaccination] Anti-Rabies selected, unchecking Not Vaccinated');
+      }
+      updateSummary();
+      saveBookingDataToSession();
+    });
+  }
+  
+  if (vaccAntiParvo) {
+    vaccAntiParvo.addEventListener('change', function() {
+      if (this.checked && vaccNotVaccinated) {
+        vaccNotVaccinated.checked = false;
+        console.log('[Vaccination] Anti-Parvo selected, unchecking Not Vaccinated');
+      }
+      updateSummary();
+      saveBookingDataToSession();
+    });
+  }
+  
+  if (vaccNotVaccinated) {
+    vaccNotVaccinated.addEventListener('change', function() {
+      if (this.checked) {
+        if (vaccAntiRabies) vaccAntiRabies.checked = false;
+        if (vaccAntiParvo) vaccAntiParvo.checked = false;
+        console.log('[Vaccination] Not Vaccinated selected, unchecking all vaccines');
+      }
+      updateSummary();
+      saveBookingDataToSession();
+    });
+  }
+  
+  // Legacy vaccination status radio buttons (if present)
   document.querySelectorAll('input[name="vaccinationStatus"]').forEach(radio => {
     radio.addEventListener('change', function () {
       if (this.checked) {
@@ -585,6 +663,73 @@ async function handleProfileLoad() {
   customAlert.success('Profile Loaded!', 'Your saved details have been loaded successfully.');
 }
 
+// Quick Rebook - same as handleProfileLoad but for mobile quick access
+async function handleQuickRebook() {
+  const user = await getCurrentUser();
+  if (!user) {
+    customAlert.warning('Not Logged In', 'Please log in first to book an appointment.');
+    return;
+  }
+
+  // Get profile from last booking
+  const allBookings = await getBookings();
+  const userBookings = Array.isArray(allBookings) ? allBookings.filter(b => b.userId === user.id) : [];
+
+  if (userBookings.length === 0) {
+    customAlert.show('No Profile Found', 'No saved profile yet. Complete the form once and tick "Save details" to reuse.', 'warning');
+    return;
+  }
+
+  // Get the most recent booking
+  const lastBooking = userBookings[userBookings.length - 1];
+
+  // Create profile object from last booking
+  const profile = {
+    ownerName: lastBooking.ownerName,
+    contactNumber: lastBooking.contactNumber,
+    address: lastBooking.ownerAddress,
+    petName: lastBooking.petName,
+    breed: lastBooking.petBreed,
+    age: lastBooking.petAge,
+    weight: lastBooking.petWeight,
+    medical: lastBooking.medicalNotes,
+    vaccinations: lastBooking.vaccinationNotes
+  };
+
+  // Load profile details
+  applyProfileToForm(profile);
+
+  // Auto-fill pet type and package from last booking
+  bookingData.petType = lastBooking.petType;
+  bookingData.packageId = lastBooking.packageId;
+
+  // Update UI to reflect selection
+  document.querySelectorAll('.pet-type-card').forEach(card => {
+    if (card.dataset.petType === lastBooking.petType) {
+      card.classList.add('selected');
+    } else {
+      card.classList.remove('selected');
+    }
+  });
+
+  loadPackages();
+  document.querySelectorAll('.package-card').forEach(card => {
+    if (card.dataset.packageId === lastBooking.packageId) {
+      card.classList.add('selected');
+    } else {
+      card.classList.remove('selected');
+    }
+  });
+
+  // Jump directly to step 3 (Schedule)
+  showStep(3);
+  setupCalendarTimePicker().catch(err => console.error('Error rendering calendar:', err));
+
+  updateSummary();
+
+  customAlert.success('Profile Loaded!', 'Your saved details have been loaded. Now select your preferred date and time.');
+}
+
 function applyProfileToForm(profile = {}) {
   const fieldMap = [
     ['ownerName', 'ownerName', 'ownerName'],
@@ -669,6 +814,12 @@ function showStep(step) {
   document.querySelectorAll('.step-content').forEach((content, index) => {
     if (index + 1 === step) {
       content.classList.add('active');
+      // Add inline styles for horizontal scroll on mobile
+      content.style.overflowX = 'auto';
+      content.style.webkitOverflowScrolling = 'touch';
+      content.style.maxWidth = '100%';
+      content.style.width = '100%';
+      content.style.boxSizing = 'border-box';
     } else {
       content.classList.remove('active');
     }
@@ -722,6 +873,9 @@ function showStep(step) {
   }
 
   updateSummary();
+  
+  // Update next button state based on current step
+  enableNextButton();
 }
 
 // Next step
@@ -734,30 +888,9 @@ async function nextStep() {
   // Save current form data to sessionStorage before moving to next step
   saveBookingDataToSession();
 
-  // Gate: Require login before entering step 3 (Date, Time & Groomer)
-  if (currentStep === 2) {
-    let user = null;
-    try {
-      if (typeof getCurrentUser === 'function') {
-        user = await getCurrentUser();
-      }
-    } catch (error) {
-      console.warn('Could not check user:', error);
-    }
-
-    if (!user) {
-      await customAlert.show('Login Required', 'Please create an account or log in to continue booking. Your information has been saved.', 'warning');
-      // Save booking data and intended step so we can restore after auth
-      sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
-      sessionStorage.setItem('bookingStep', '3');
-      redirect('signup.html?return=booking.html');
-      return;
-    }
-  }
-
-  // Skip step 2 (Package) if packageId is already set after step 1
-  if (currentStep === 1 && bookingData.packageId) {
-    showStep(3);
+  // Gate: Require logige) if packageId is already set after step 2
+  if (currentStep === 2 && bookingData.packageId) {
+    showStep(4);
     return;
   }
 
@@ -803,24 +936,62 @@ function prevStep() {
 
 // Validate step
 function validateStep(step) {
+  console.log('[validateStep] Validating step:', step, 'bookingData:', JSON.stringify(bookingData, null, 2));
+  
+  // Sync form values to bookingData before validation (dual-source validation)
+  syncFormToBookingData();
+  
   switch (step) {
     case 1:
+      // Policy agreement step
+      const policyCheckbox = document.getElementById('agreeToPolicy');
+      if (!policyCheckbox || !policyCheckbox.checked) {
+        customAlert.warning('Policy Agreement Required', 'Please scroll through and read our policy, then check the agreement box to continue.');
+        return false;
+      }
+      break;
+    case 2:
       if (!bookingData.petType) {
         customAlert.warning('Missing Information', 'Please select a pet type');
         return false;
       }
       break;
-    case 2:
+    case 3:
+      // Smart package detection - check DOM if bookingData is empty
+      if (!bookingData.packageId) {
+        const selectedPackageCard = document.querySelector('.package-card.selected');
+        if (selectedPackageCard && selectedPackageCard.dataset.packageId) {
+          bookingData.packageId = selectedPackageCard.dataset.packageId;
+          console.log('[validateStep] Auto-detected package from DOM:', bookingData.packageId);
+        }
+      }
+      
       if (!bookingData.packageId) {
         customAlert.warning('Missing Information', 'Please select a package');
         return false;
       }
-      if (bookingData.packageId === SINGLE_SERVICE_PACKAGE_ID && bookingData.singleServices.length === 0) {
-        customAlert.warning('Missing Information', 'Select at least one single service option.');
-        return false;
+      
+      // Single service validation
+      if (bookingData.packageId === SINGLE_SERVICE_PACKAGE_ID) {
+        // Check DOM for selected single services if bookingData is empty
+        if (bookingData.singleServices.length === 0) {
+          const checkedServices = document.querySelectorAll('[data-single-service]:checked');
+          checkedServices.forEach(input => {
+            const serviceId = input.dataset.singleService;
+            if (serviceId && !bookingData.singleServices.includes(serviceId)) {
+              bookingData.singleServices.push(serviceId);
+            }
+          });
+          console.log('[validateStep] Auto-detected single services from DOM:', bookingData.singleServices);
+        }
+        
+        if (bookingData.singleServices.length === 0) {
+          customAlert.warning('Missing Information', 'Select at least one single service option.');
+          return false;
+        }
       }
       break;
-    case 3:
+    case 4:
       // Groomer selection removed - admin will assign
       // Only require date and time
       if (!bookingData.date) {
@@ -836,41 +1007,83 @@ function validateStep(step) {
         return false;
       }
       break;
-    case 4:
-      if (!bookingData.ownerName.trim()) {
+    case 5:
+      // Dual-source validation: check both bookingData and DOM
+      const ownerNameValue = bookingData.ownerName?.trim() || document.getElementById('ownerName')?.value?.trim() || '';
+      const contactNumberValue = bookingData.contactNumber?.trim() || document.getElementById('contactNumber')?.value?.trim() || '';
+      const petNameValue = bookingData.petName?.trim() || document.getElementById('petName')?.value?.trim() || '';
+      
+      console.log('[validateStep] Step 5 values - ownerName:', ownerNameValue, 'contactNumber:', contactNumberValue, 'petName:', petNameValue);
+      
+      if (!ownerNameValue) {
         customAlert.warning('Missing Information', 'Please enter the owner name');
         return false;
       }
-      if (!bookingData.contactNumber.trim()) {
+      if (!contactNumberValue) {
         customAlert.warning('Missing Information', 'Please enter a contact number');
         return false;
       }
-      // Validate phone number format
-      const phone = bookingData.contactNumber.replace(/\s/g, '');
+      // Validate phone number format (11-digit Philippine number)
+      const phone = contactNumberValue.replace(/\s/g, '');
       if (!/^(\+63|0)[0-9]{10}$/.test(phone)) {
         customAlert.warning('Invalid Input', 'Please enter a valid 11-digit phone number (e.g., 09662233605 or +63 9662233605)');
         return false;
       }
-      if (!bookingData.petName.trim()) {
+      if (!petNameValue) {
         customAlert.warning('Missing Information', "Please enter your pet's name");
         return false;
       }
-      // Validate vaccinations
+      
+      // Strict vaccination validation with mutual exclusion
       const antiRabies = document.getElementById('vaccAntiRabies');
       const antiParvo = document.getElementById('vaccAntiParvo');
       const notVaccinated = document.getElementById('vaccNotVaccinated');
+      
+      const isVaccinated = antiRabies?.checked || antiParvo?.checked;
+      const isNotVaccinated = notVaccinated?.checked;
+      
+      console.log('[validateStep] Vaccination status - antiRabies:', antiRabies?.checked, 'antiParvo:', antiParvo?.checked, 'notVaccinated:', notVaccinated?.checked);
 
-      if (notVaccinated?.checked) {
+      // Check for mutual exclusion violation
+      if (isVaccinated && isNotVaccinated) {
+        customAlert.warning('Invalid Selection', 'You cannot select both vaccinated and not vaccinated. Please choose one option.');
+        return false;
+      }
+      
+      // Check if not vaccinated is selected
+      if (isNotVaccinated) {
         customAlert.warning('Vaccination Required', 'Your pet must be vaccinated to book an appointment. Please contact us once your pet has received the necessary vaccinations.');
         return false;
       }
-      if (!antiRabies?.checked && !antiParvo?.checked) {
-        customAlert.warning('Vaccination Status', "Please confirm your pet's vaccination status. Select at least one vaccine or mark as not vaccinated.");
+      
+      // Check if no vaccination status is selected
+      if (!isVaccinated && !isNotVaccinated) {
+        customAlert.warning('Vaccination Status Required', "Please confirm your pet's vaccination status. Select at least one vaccine or mark as not vaccinated.");
         return false;
       }
       break;
   }
   return true;
+}
+
+// Sync form values to bookingData (dual-source validation helper)
+function syncFormToBookingData() {
+  const fields = ['ownerName', 'contactNumber', 'ownerAddress', 'petName', 'petBreed', 'petAge', 'medicalNotes', 'vaccinationNotes', 'bookingNotes'];
+  
+  fields.forEach(field => {
+    const el = document.getElementById(field);
+    if (el && el.value) {
+      bookingData[field] = el.value.trim();
+    }
+  });
+  
+  // Sync weight from radio buttons
+  const selectedWeight = document.querySelector('input[name="petWeight"]:checked');
+  if (selectedWeight) {
+    bookingData.petWeight = selectedWeight.value;
+  }
+  
+  console.log('[syncFormToBookingData] Synced bookingData:', JSON.stringify(bookingData, null, 2));
 }
 
 // Select pet type
@@ -972,13 +1185,31 @@ function renderSingleServiceConfigurator() {
 
   optionsContainer.innerHTML = optionEntries.map(option => {
     const checked = bookingData.singleServices.includes(option.id);
+    // Get price based on weight selection - show total instead of range when weight is selected
+    const tiers = option.tiers || {};
+    const smallPrice = tiers.small?.price || 0;
+    const largePrice = tiers.large?.price || 0;
+    
+    let priceDisplay = '';
+    if (bookingData.petWeight) {
+      // Weight is selected - show the specific price for that weight
+      const category = getWeightCategoryForDisplay(bookingData.petWeight);
+      const specificPrice = category === 'large' ? largePrice : smallPrice;
+      priceDisplay = specificPrice ? `₱${specificPrice}` : '';
+      console.log('[SingleService] Weight selected:', bookingData.petWeight, 'Category:', category, 'Price:', specificPrice);
+    } else {
+      // No weight selected - show price range
+      priceDisplay = smallPrice && largePrice ? `₱${smallPrice} - ₱${largePrice}` : '';
+    }
+    
     return `
-      <label class="addon-chip single-service-chip ${checked ? 'selected' : ''}">
-        <input type="checkbox" ${checked ? 'checked' : ''} data-single-service="${option.id}">
-        <div>
-          <div style="font-weight:600;">${escapeHtml(option.label)}</div>
-          <div class="price-hint" data-price-label="${option.id}" style="font-size:0.85rem; color: var(--gray-600);">
-            ${bookingData.petWeight ? 'Calculatingâ€¦' : 'Select weight to see pricing'}
+      <label class="addon-chip single-service-chip ${checked ? 'selected' : ''}" style="display: flex; align-items: center; gap: 0.75rem; padding: 1rem; border: 2px solid ${checked ? 'var(--primary)' : 'var(--gray-300)'}; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s ease;">
+        <input type="checkbox" ${checked ? 'checked' : ''} data-single-service="${option.id}" style="width: 1.25rem; height: 1.25rem;">
+        <div style="flex: 1;">
+          <div style="font-weight:600; font-size: 1rem;">${escapeHtml(option.label)}</div>
+          <div style="font-size: 0.9rem; color: #2e7d32; font-weight: 600; margin-top: 0.25rem;">${priceDisplay}</div>
+          <div class="price-hint" data-price-label="${option.id}" style="font-size:0.8rem; color: var(--gray-500); margin-top: 0.25rem;">
+            ${bookingData.petWeight ? '' : '(Price varies by weight)'}
           </div>
         </div>
       </label>
@@ -994,6 +1225,18 @@ function renderSingleServiceConfigurator() {
   updateSingleServicePriceLabels();
 }
 
+// Helper function to determine weight category for single service pricing
+function getWeightCategoryForDisplay(weightLabel) {
+  if (!weightLabel) return 'small';
+  const lower = weightLabel.toLowerCase();
+  // Extract numeric value from weight label
+  const match = lower.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 'small';
+  const numeric = parseFloat(match[1]);
+  // 15kg and above is "large", below is "small"
+  return numeric >= 15 ? 'large' : 'small';
+}
+
 function toggleSingleServiceOption(serviceId, enabled) {
   if (!serviceId) return;
   if (enabled) {
@@ -1004,8 +1247,26 @@ function toggleSingleServiceOption(serviceId, enabled) {
     bookingData.singleServices = bookingData.singleServices.filter(id => id !== serviceId);
   }
   updateSingleServicePriceLabels();
+  updateReferenceCutsVisibility();
   updateSummary();
   enableNextButton();
+}
+
+// Show/hide reference cuts section based on selected single services
+// Only Face Trim needs reference cuts - Nail Trim and Ear Clean don't need it
+function updateReferenceCutsVisibility() {
+  const referenceCutsSection = document.getElementById('referenceCutsSection');
+  if (!referenceCutsSection) return;
+  
+  // If single service package is selected
+  if (isSingleServicePackage()) {
+    // Only show reference cuts if Face Trim is selected
+    const hasFaceTrim = bookingData.singleServices.includes('face');
+    referenceCutsSection.style.display = hasFaceTrim ? 'block' : 'none';
+  } else {
+    // For regular packages, always show reference cuts
+    referenceCutsSection.style.display = 'block';
+  }
 }
 
 function updateSingleServicePriceLabels() {
@@ -1016,18 +1277,20 @@ function updateSingleServicePriceLabels() {
   optionsContainer.querySelectorAll('[data-price-label]').forEach(label => {
     const serviceId = label.dataset.priceLabel;
     if (typeof getSingleServicePrice !== 'function') {
-      label.textContent = 'Pricing unavailable';
+      label.textContent = '';
       return;
     }
     const info = getSingleServicePrice(serviceId, bookingData.petWeight || '');
     if (info.requiresWeight && !bookingData.petWeight) {
-      label.textContent = 'Select weight to see pricing';
+      label.textContent = '(Price varies by weight)';
       return;
     }
     if (info.price) {
-      label.textContent = `${formatCurrency(info.price)} Â· ${info.category === 'large' ? '15kg +' : 'Up to 15kg'}`;
+      label.textContent = `Your price: ${formatCurrency(info.price)} (${info.category === 'large' ? '15kg+' : 'Up to 15kg'})`;
+      label.style.color = '#1976d2';
+      label.style.fontWeight = '500';
     } else {
-      label.textContent = 'Not available for this weight';
+      label.textContent = '';
     }
   });
 }
@@ -1054,6 +1317,7 @@ function selectPackage(packageId) {
   updateSummary();
   enableNextButton();
   renderSingleServiceConfigurator();
+  updateReferenceCutsVisibility();
 }
 
 // Setup calendar time picker
@@ -1063,7 +1327,7 @@ async function setupCalendarTimePicker() {
 
   // Clear previous content and setup structure
   container.innerHTML = `
-    <div id="calendarWrapper" style="margin-bottom: 2rem;"></div>
+    <div id="calendarWrapper" style="margin-bottom: 2rem; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; box-sizing: border-box; padding-bottom: 0.5rem;"></div>
     <div id="timeSlotsWrapper"></div>
     <div id="groomerAssignmentDisplay" style="text-align:center; display:none; margin-top:1rem; font-size:0.9rem; color:var(--gray-600);"></div>
   `;
@@ -1264,9 +1528,9 @@ async function renderBookingTimeSlots(date) {
   const timeSlotHTMLs = await Promise.all(timeSlotPromises);
 
   container.innerHTML = `
-    <div class="time-slots-picker">
+    <div class="time-slots-picker" style="width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; box-sizing: border-box; padding-bottom: 0.5rem;">
       <h4 style="margin-bottom: 1rem; text-align:center;">Select Time for ${formatDate(date)}</h4>
-      <div class="time-slots">
+      <div class="time-slots" style="display: flex; gap: 1rem; width: max-content; min-width: 100%;">
         ${timeSlotHTMLs.join('')}
       </div>
     </div>
@@ -1543,6 +1807,29 @@ async function updateSummary() {
     explanationDiv.innerHTML = `💡 <strong>Booking Fee Explanation:</strong> The ${formatCurrency(100)} booking fee is included in the "Amount to Pay" above and will be deducted from your final bill upon arrival. This helps secure your appointment slot.`;
     summaryContainer.parentElement.insertBefore(explanationDiv, summaryContainer.nextSibling);
   }
+
+  // Add Quick Rebook section below booking fee explanation (only on mobile)
+  let quickRebookDiv = summaryContainer.parentElement.querySelector('[data-quick-rebook]');
+  if (!quickRebookDiv) {
+    quickRebookDiv = document.createElement('div');
+    quickRebookDiv.setAttribute('data-quick-rebook', 'true');
+    quickRebookDiv.style.cssText = 'margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, rgba(46, 125, 50, 0.08), rgba(76, 175, 80, 0.08)); border: 1px solid #c8e6c9; border-radius: var(--radius-sm); display: none;';
+    quickRebookDiv.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+        <span style="font-size: 1.2rem;">🚀</span>
+        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 600; color: #2e7d32;">Quick Rebook</h4>
+      </div>
+      <p style="margin: 0 0 0.75rem 0; font-size: 0.85rem; color: var(--gray-700);">We saved your latest profile so you can book again without retyping the details.</p>
+      <button class="btn btn-sm" style="width: 100%; background: #2e7d32; color: white; border: none; padding: 0.75rem; border-radius: var(--radius-sm); cursor: pointer; font-weight: 600; font-size: 0.9rem;" onclick="handleQuickRebook()">Use Saved Details</button>
+    `;
+    summaryContainer.parentElement.insertBefore(quickRebookDiv, explanationDiv.nextSibling);
+  }
+
+  // Show Quick Rebook on mobile only
+  if (quickRebookDiv) {
+    const isMobile = window.innerWidth <= 768;
+    quickRebookDiv.style.display = isMobile ? 'block' : 'none';
+  }
 }
 
 // Enable next button if step is valid
@@ -1553,47 +1840,72 @@ function enableNextButton() {
   let isValid = false;
   switch (currentStep) {
     case 1:
-      isValid = !!bookingData.petType;
+      // Policy agreement step - check if checkbox is checked
+      const policyCheckbox = document.getElementById('agreeToPolicy');
+      isValid = policyCheckbox && policyCheckbox.checked;
       break;
     case 2:
+      isValid = !!bookingData.petType;
+      break;
+    case 3:
       isValid = !!bookingData.packageId;
       if (isValid && bookingData.packageId === SINGLE_SERVICE_PACKAGE_ID) {
         isValid = bookingData.singleServices.length > 0;
       }
       break;
-    case 3:
+    case 4:
       isValid = !!bookingData.date && !!bookingData.time;
       break;
-    case 4:
+    case 5:
       isValid = !!bookingData.ownerName.trim() && !!bookingData.contactNumber.trim() && !!bookingData.petName.trim();
       break;
   }
 
-  nextBtn.disabled = !isValid;
+  if (isValid) {
+    nextBtn.disabled = false;
+    nextBtn.removeAttribute('disabled');
+  } else {
+    nextBtn.disabled = true;
+    nextBtn.setAttribute('disabled', 'disabled');
+  }
 }
 
 // Submit booking
 async function submitBooking(event) {
+  console.log('[submitBooking] Starting booking submission...');
   try {
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
 
+    // Sync form data before validation
+    syncFormToBookingData();
+    console.log('[submitBooking] Form data synced, bookingData:', JSON.stringify(bookingData, null, 2));
+
     // Validate final step fields
-    if (!validateStep(4)) {
+    if (!validateStep(5)) {
+      console.log('[submitBooking] Validation failed for step 5');
       return;
+    }
+    console.log('[submitBooking] Validation passed');
+
+    // Show loading overlay
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay();
     }
 
     // Ensure user is authenticated before creating booking
     if (typeof getCurrentUser !== 'function') {
       console.error('getCurrentUser function not available');
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       customAlert.error('System Error', 'Error: Authentication system not loaded. Please refresh the page and try again.');
       return;
     }
 
     const user = await getCurrentUser();
     if (!user) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       await customAlert.show('Login Required', 'Please create an account or log in to submit your booking.', 'warning');
       sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
-      sessionStorage.setItem('bookingStep', '4');
+      sessionStorage.setItem('bookingStep', '5');
       if (typeof redirect === 'function') {
         redirect('signup.html?return=booking.html');
       } else {
@@ -1605,12 +1917,14 @@ async function submitBooking(event) {
     // Check ban/warnings
     const warningInfo = await getCustomerWarningInfo(user.id);
     if (warningInfo?.isBanned) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       await customAlert.error('Account Banned', 'Your account is temporarily banned. Please check your customer dashboard for instructions on how to lift the ban.');
       redirect('customer-dashboard.html');
       return;
     }
 
     if (typeof isCalendarBlackout === 'function' && isCalendarBlackout(bookingData.date)) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       customAlert.warning('Date Unavailable', 'This date has been closed by the admin. Please choose another slot.');
       return;
     }
@@ -1758,6 +2072,14 @@ async function submitBooking(event) {
       sessionStorage.removeItem('editingBookingId');
 
       sessionStorage.setItem('lastBooking', JSON.stringify(booking));
+      
+      // Check if booking came from admin walk-in and save source
+      const urlParams = new URLSearchParams(window.location.search);
+      const source = urlParams.get('source');
+      if (source === 'admin') {
+        sessionStorage.setItem('bookingSource', 'admin');
+      }
+      
       redirect('booking-success.html');
       return;
     }
@@ -1782,16 +2104,28 @@ async function submitBooking(event) {
     // Store booking in session for success page
     sessionStorage.setItem('lastBooking', JSON.stringify(booking));
 
+    // Check if booking came from admin walk-in and save source
+    const urlParams = new URLSearchParams(window.location.search);
+    const source = urlParams.get('source');
+    if (source === 'admin') {
+      sessionStorage.setItem('bookingSource', 'admin');
+    }
+
     // Redirect to success page
     redirect('booking-success.html');
   } catch (err) {
     console.error('submitBooking failed', err);
+    // Hide loading overlay on error
+    if (typeof hideLoadingOverlay === 'function') {
+      hideLoadingOverlay();
+    }
     alert('An error occurred while submitting the booking. See console for details.');
   }
 }
 window.submitBooking = submitBooking;
 window.selectTime = selectTime;
 window.setupCalendarTimePicker = setupCalendarTimePicker;
+window.handleQuickRebook = handleQuickRebook;
 
 
 
@@ -1937,6 +2271,7 @@ function selectGroomingCut(cutName, ev) {
   }
 }
 window.selectGroomingCut = selectGroomingCut;
+window.updateReferenceCutsVisibility = updateReferenceCutsVisibility;
 
 // Restore form data from bookingData object
 function restoreBookingFormData(data) {

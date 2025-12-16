@@ -26,8 +26,10 @@
       </a>
       <button class="menu-toggle" aria-label="Toggle menu">☰</button>
       <ul class="nav-links">
-        <li><a href="customer-dashboard.html">Dashboard</a></li>
-        <li><a href="#" onclick="logout(event)">Logout</a></li>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="login.html">Login</a></li>
       </ul>
     </nav>
     <div class="mobile-drawer-overlay"></div>
@@ -42,8 +44,10 @@
         <button class="mobile-drawer-close" aria-label="Close menu">×</button>
       </div>
       <ul class="mobile-drawer-links">
-        <li><a href="customer-dashboard.html">Dashboard</a></li>
-        <li><a href="#" onclick="logout(event)">Logout</a></li>
+        <li><a href="index.html">Home</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="login.html">Login</a></li>
       </ul>
     </div>
   </header>
@@ -91,9 +95,9 @@
           </div>
         </div>
 
-        <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap;">
-          <a href="customer-dashboard.html" class="btn btn-primary">Back to Dashboard</a>
-          <a href="booking.html" class="btn btn-outline">Book Another Appointment</a>
+        <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap;" id="successActions">
+          <a href="customer-dashboard.html" class="btn btn-primary" id="backToDashboardBtn">Back to Dashboard</a>
+          <a href="booking.html" class="btn btn-outline" id="bookAnotherBtn">Book Another Appointment</a>
         </div>
       </div>
     </div>
@@ -124,10 +128,30 @@
         return;
       }
 
+      // Check if booking came from admin walk-in
+      const bookingSource = sessionStorage.getItem('bookingSource');
+      const isAdminWalkIn = bookingSource === 'admin';
+      
+      // Update buttons based on source
+      const backBtn = document.getElementById('backToDashboardBtn');
+      const bookAnotherBtn = document.getElementById('bookAnotherBtn');
+      
+      if (isAdminWalkIn) {
+        if (backBtn) {
+          backBtn.href = 'admin-dashboard.html';
+          backBtn.textContent = 'Back to Admin Dashboard';
+        }
+        if (bookAnotherBtn) {
+          bookAnotherBtn.href = 'booking.html?source=admin';
+        }
+        // Clear the source after use
+        sessionStorage.removeItem('bookingSource');
+      }
+
       const bookingStr = sessionStorage.getItem('lastBooking');
       if (!bookingStr) {
         // Redirect if no booking found
-        window.location.href = 'customer-dashboard.html';
+        window.location.href = isAdminWalkIn ? 'admin-dashboard.html' : 'customer-dashboard.html';
         return;
       }
 

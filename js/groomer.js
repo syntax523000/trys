@@ -4,6 +4,43 @@
 
 let groomerGroomerId = null;
 
+async function linkStaffToGroomer(user) {
+  // Get all groomers and find one matching this user's name
+  const groomers = await getGroomers();
+  const matchingGroomer = groomers.find(g => g.name.toLowerCase() === user.name.toLowerCase());
+  
+  if (matchingGroomer) {
+    // Update user with groomer ID
+    const users = await getUsers();
+    const userIndex = users.findIndex(u => u.id === user.id);
+    if (userIndex !== -1) {
+      users[userIndex].groomerId = matchingGroomer.id;
+      await saveUsers(users);
+    }
+    return matchingGroomer.id;
+  }
+  
+  // If no match found, create a new groomer entry
+  const newGroomer = {
+    id: 'groomer-' + user.id,
+    name: user.name,
+    avatar: '👨‍⚕️',
+    specialty: ''
+  };
+  groomers.push(newGroomer);
+  await saveGroomers(groomers);
+  
+  // Update user with new groomer ID
+  const users = await getUsers();
+  const userIndex = users.findIndex(u => u.id === user.id);
+  if (userIndex !== -1) {
+    users[userIndex].groomerId = newGroomer.id;
+    await saveUsers(users);
+  }
+  
+  return newGroomer.id;
+}
+
 async function initGroomerDashboard() {
   if (!(await requireGroomer())) {
     return;

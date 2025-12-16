@@ -27,6 +27,9 @@
       <button class="menu-toggle" aria-label="Toggle menu">☰</button>
       <ul class="nav-links">
         <li><a href="index.html">Home</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
         <li><a href="#" onclick="logout(event)">Logout</a></li>
       </ul>
     </nav>
@@ -43,6 +46,10 @@
       </div>
       <ul class="mobile-drawer-links">
         <li><a href="index.html">Home</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="reviews.html">Reviews</a></li>
+        <li><a href="policy.html">Policy</a></li>
+        <li><a href="booking.html">Book Now</a></li>
         <li><a href="#" onclick="logout(event)">Logout</a></li>
       </ul>
     </div>
@@ -96,6 +103,12 @@
                     📋 Booking History
                   </a>
                 </li>
+                <li style="margin-bottom: 0.5rem;">
+                  <a href="booking.html" class="submenu-link"
+                    style="display: block; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); transition: var(--transition); color: var(--gray-700); font-weight: 500; text-decoration: none; font-size: 0.9rem;">
+                    ➕ Book New Appointment
+                  </a>
+                </li>
               </ul>
             </li>
             <li style="margin-bottom: 0.5rem;">
@@ -105,9 +118,15 @@
               </a>
             </li>
             <li style="margin-bottom: 0.5rem;">
-              <a href="booking.html"
+              <a href="#" data-view="gallery"
                 style="display: block; padding: 0.75rem 1rem; border-radius: var(--radius-sm); transition: var(--transition); color: var(--gray-700); font-weight: 500; text-decoration: none;">
-                ➕ Book New Appointment
+                📸 My Pet's Gallery
+              </a>
+            </li>
+            <li style="margin-bottom: 0.5rem;">
+              <a href="#" data-view="profile"
+                style="display: block; padding: 0.75rem 1rem; border-radius: var(--radius-sm); transition: var(--transition); color: var(--gray-700); font-weight: 500; text-decoration: none;">
+                👤 My Profile
               </a>
             </li>
             <li style="margin-bottom: 0.5rem;">
@@ -117,14 +136,6 @@
               </a>
             </li>
           </ul>
-
-          <!-- Grooming Gallery -->
-          <div style="border-top: 1px solid var(--gray-200); padding-top: 1.5rem;">
-            <h3 style="margin-bottom: 1rem; font-size: 1.125rem;">📸 Grooming Gallery & Reviews</h3>
-            <div id="groomingGalleryPanel">
-              <!-- Before/after images and reviews will be loaded here -->
-            </div>
-          </div>
         </div>
 
         <!-- Main Content -->
@@ -154,7 +165,7 @@
             </div>
 
             <!-- Recent Bookings Section -->
-            <div style="margin-bottom: 2rem;">
+            <div id="recentBookingsSection" style="margin-bottom: 2rem;">
               <h2 class="section-title" style="margin: 0; text-align: left; margin-bottom:1rem;">📅 Recent Bookings</h2>
 
               <!-- Search Box (Admin Style) -->
@@ -164,17 +175,7 @@
                   onkeyup="renderCustomerBookings()">
               </div>
 
-              <div
-                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-                <div class="booking-filter-group" id="customerBookingFilters">
-                  <button type="button" class="active" data-filter="all">All</button>
-                  <button type="button" data-filter="upcoming">In Progress</button>
-                  <button type="button" data-filter="pending">Pending</button>
-                  <button type="button" data-filter="confirmed">Confirmed</button>
-                  <button type="button" data-filter="completed">Completed</button>
-                  <button type="button" data-filter="cancelled">Cancelled</button>
-                </div>
-              </div>
+
               <div id="bookingsContainer">
                 <!-- Bookings will be loaded here -->
               </div>
@@ -194,15 +195,6 @@
               </div>
             </div>
 
-            <!-- Community review feed -->
-            <div style="margin-bottom:2rem;">
-              <h2 style="margin-bottom: 1rem; color: var(--gray-900);">💬 Community looks</h2>
-              <p style="color: var(--gray-600); margin-bottom: 1rem;">Browse recent before & afters shared by other fur
-                parents for inspiration.</p>
-              <div id="communityReviewFeed" class="review-feed-grid">
-                <!-- Reviews inserted via JS -->
-              </div>
-            </div>
           </div>
 
           <!-- Bookings View (now empty, content moved to overview) -->
@@ -212,6 +204,20 @@
           <!-- Calendar View -->
           <div id="calendarView" style="display: none;">
             <h2 class="section-title" style="text-align:left; margin-bottom: 1.5rem;">📅 Booking Calendar</h2>
+            
+            <!-- Account Statistics in Calendar View -->
+            <div class="card" style="margin-bottom: 2rem;">
+              <div class="card-header">
+                <h3 class="card-title">📊 Your Account Overview</h3>
+                <p style="color: var(--gray-600); margin-top: 0.25rem;">Quick stats about your booking history and spending.</p>
+              </div>
+              <div class="card-body">
+                <div id="calendarViewStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+                  <!-- Stats will be loaded here -->
+                </div>
+              </div>
+            </div>
+            
             <div id="customerCalendar"></div>
           </div>
 
@@ -246,6 +252,142 @@
                   <button type="submit" class="btn btn-primary" style="width: 100%;">Update Password</button>
                 </form>
               </div>
+            </div>
+          </div>
+
+          <!-- Profile Management View -->
+          <div id="profileView" style="display: none;">
+            <h2 class="section-title" style="text-align:left; margin-bottom: 1.5rem;">👤 My Profile</h2>
+            <p style="color: var(--gray-600); margin-bottom: 1.5rem;">Manage your personal information and account settings.</p>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+              <!-- Personal Information -->
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Personal Information</h3>
+                  <p style="color: var(--gray-600); margin-top: 0.25rem;">Update your basic profile details.</p>
+                </div>
+                <div class="card-body">
+                  <form id="customerProfileForm">
+                    <div class="form-group">
+                      <label for="profileName" class="form-label">Full Name</label>
+                      <input type="text" id="profileName" class="form-input" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="profileEmail" class="form-label">Email Address</label>
+                      <input type="email" id="profileEmail" class="form-input" placeholder="Enter your email" readonly style="background: #f5f5f5; cursor: not-allowed;">
+                      <small class="form-hint">Email cannot be changed. Contact support if needed.</small>
+                    </div>
+                    <div class="form-group">
+                      <label for="profilePhone" class="form-label">Phone Number</label>
+                      <input type="tel" id="profilePhone" class="form-input" placeholder="+63 9XX XXX XXXX" pattern="(\+63|0)[0-9]{10}" maxlength="13">
+                    </div>
+                    <div class="form-group">
+                      <label for="profileAddress" class="form-label">Address</label>
+                      <textarea id="profileAddress" class="form-textarea" rows="3" placeholder="Enter your complete address"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Update Profile</button>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Pet Information -->
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Default Pet Information</h3>
+                  <p style="color: var(--gray-600); margin-top: 0.25rem;">Set default pet details for faster booking.</p>
+                </div>
+                <div class="card-body">
+                  <form id="customerPetForm">
+                    <div class="form-group">
+                      <label for="defaultPetName" class="form-label">Pet Name</label>
+                      <input type="text" id="defaultPetName" class="form-input" placeholder="Enter your pet's name">
+                    </div>
+                    <div class="form-group">
+                      <label for="defaultPetType" class="form-label">Pet Type</label>
+                      <select id="defaultPetType" class="form-select">
+                        <option value="">Select pet type...</option>
+                        <option value="dog">Dog</option>
+                        <option value="cat">Cat</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="defaultPetBreed" class="form-label">Breed</label>
+                      <input type="text" id="defaultPetBreed" class="form-input" placeholder="e.g., Golden Retriever">
+                    </div>
+                    <div class="form-group">
+                      <label for="defaultPetAge" class="form-label">Age</label>
+                      <select id="defaultPetAge" class="form-select">
+                        <option value="">Select age...</option>
+                        <option value="Less than 1 month">Less than 1 month</option>
+                        <option value="1 month">1 month</option>
+                        <option value="2 months">2 months</option>
+                        <option value="3 months">3 months</option>
+                        <option value="4 months">4 months</option>
+                        <option value="5 months">5 months</option>
+                        <option value="6 months">6 months</option>
+                        <option value="1 year">1 year</option>
+                        <option value="2 years">2 years</option>
+                        <option value="3 years">3 years</option>
+                        <option value="4 years">4 years</option>
+                        <option value="5+ years">5+ years</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Weight Category</label>
+                      <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        <label class="addon-chip">
+                          <input type="radio" name="defaultPetWeight" value="5kg & below">
+                          <span>5kg & below</span>
+                        </label>
+                        <label class="addon-chip">
+                          <input type="radio" name="defaultPetWeight" value="5.1 – 8kg">
+                          <span>5.1 – 8kg</span>
+                        </label>
+                        <label class="addon-chip">
+                          <input type="radio" name="defaultPetWeight" value="8.1 – 15kg">
+                          <span>8.1 – 15kg</span>
+                        </label>
+                        <label class="addon-chip">
+                          <input type="radio" name="defaultPetWeight" value="15.1 – 30kg">
+                          <span>15.1 – 30kg</span>
+                        </label>
+                        <label class="addon-chip">
+                          <input type="radio" name="defaultPetWeight" value="30kg & above">
+                          <span>30kg & above</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label for="defaultMedicalNotes" class="form-label">Medical Notes</label>
+                      <textarea id="defaultMedicalNotes" class="form-textarea" rows="2" placeholder="Allergies, medications, special conditions..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Save Pet Profile</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <!-- Account Statistics -->
+            <div class="card" style="margin-top: 2rem;">
+              <div class="card-header">
+                <h3 class="card-title">Account Statistics</h3>
+                <p style="color: var(--gray-600); margin-top: 0.25rem;">Your booking history and account overview.</p>
+              </div>
+              <div class="card-body">
+                <div id="profileStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem;">
+                  <!-- Stats will be loaded here -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gallery View - My Pet's Before & After Photos -->
+          <div id="galleryView" style="display: none;">
+            <h2 class="section-title" style="text-align:left; margin-bottom: 1.5rem;">📸 My Pet's Gallery</h2>
+            <p style="color: var(--gray-600); margin-bottom: 1.5rem;">View before & after photos of your pets from completed grooming sessions. You can choose to share them publicly on the Reviews page.</p>
+            <div id="myPetGalleryContainer">
+              <!-- Pet gallery will be loaded here -->
             </div>
           </div>
         </div>

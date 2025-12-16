@@ -98,9 +98,142 @@
   display: none;
 }
 
+/* Step Content - Active state with horizontal scroll */
 .step-content.active {
   display: block;
   animation: fadeIn 0.5s ease-in;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-500) var(--gray-100);
+}
+
+/* Show scrollbar for step content - WebKit browsers */
+.step-content.active::-webkit-scrollbar {
+  height: 8px;
+}
+
+.step-content.active::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+.step-content.active::-webkit-scrollbar-thumb {
+  background: var(--gray-500);
+  border-radius: 4px;
+}
+
+.step-content.active::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-700);
+}
+
+/* Touch container - allow horizontal scroll */
+.touch-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Calendar Time Picker - Horizontal scroll */
+#calendarTimePicker {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-500) var(--gray-100);
+}
+
+/* Calendar wrapper inside time picker */
+#calendarWrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
+}
+
+/* Show scrollbar for calendar time picker - WebKit browsers */
+#calendarTimePicker::-webkit-scrollbar,
+#calendarWrapper::-webkit-scrollbar {
+  height: 8px;
+}
+
+#calendarTimePicker::-webkit-scrollbar-track,
+#calendarWrapper::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+#calendarTimePicker::-webkit-scrollbar-thumb,
+#calendarWrapper::-webkit-scrollbar-thumb {
+  background: var(--gray-500);
+  border-radius: 4px;
+}
+
+#calendarTimePicker::-webkit-scrollbar-thumb:hover,
+#calendarWrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-700);
+}
+
+/* Packages Container - Horizontal scroll on mobile */
+#packagesContainer {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
+  display: flex;
+  gap: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-500) var(--gray-100);
+}
+
+/* Show scrollbar for packages container - WebKit browsers */
+#packagesContainer::-webkit-scrollbar {
+  height: 8px;
+}
+
+#packagesContainer::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+#packagesContainer::-webkit-scrollbar-thumb {
+  background: var(--gray-500);
+  border-radius: 4px;
+}
+
+#packagesContainer::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-700);
+}
+
+/* Package cards - fixed width for scroll */
+.package-card {
+  flex: 0 0 auto;
+  min-width: 250px;
+}
+
+/* Time Slots - Horizontal scroll */
+.time-slots {
+  display: flex;
+  gap: 1rem;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Time Slot Button */
+.time-slot {
+  flex: 0 0 auto;
+  min-width: 100px;
 }
 
 /* Pet Type Cards */
@@ -181,6 +314,15 @@
 @media (max-width: 968px) {
   .booking-layout {
     grid-template-columns: 1fr;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  
+  /* First column - allow horizontal scroll for content */
+  .booking-layout > div:first-child {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .summary-card {
@@ -305,39 +447,43 @@
     min-width: 120px;
   }
 
-  /* Calendar responsiveness: container scrolls horizontally on small screens
-     Keep calendar head/body using consistent column templates so columns align */
+  /* Calendar container - header stays fixed */
   .mega-calendar {
     width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     box-sizing: border-box;
-  }
-
-  .mega-calendar {
     padding: 0.6rem 0.8rem;
   }
 
-  /* Calendar grid and cells - make them responsive and avoid very large fixed heights */
+  /* Calendar header stays fixed, doesn't scroll */
+  .calendar-header {
+    position: relative;
+    z-index: 10;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Calendar grid wrapper - only this scrolls horizontally */
   .calendar-grid {
     width: 100%;
+    overflow-x: visible;
     box-sizing: border-box;
   }
 
-  /* Default: responsive grid with scalable columns (desktop -> larger tiles) */
+  /* Default: flexible column widths for responsive layout */
   .calendar-grid-head,
   .calendar-grid-body {
     display: grid;
-    grid-template-columns: repeat(7, minmax(72px, 1fr));
+    grid-template-columns: repeat(7, 1fr);
     gap: 0.6rem;
     align-items: center;
-    grid-auto-rows: minmax(64px, auto);
+    grid-auto-rows: minmax(70px, auto);
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .calendar-cell {
     box-sizing: border-box;
-    min-height: 64px;
-    padding: 0.6rem;
+    min-height: 70px;
+    padding: 0.5rem;
     border-radius: 8px;
     background: var(--white);
     display: flex;
@@ -345,108 +491,13 @@
     align-items: center;
     justify-content: flex-start;
     text-align: center;
-    /* keep tiles more square on most widths */
-    aspect-ratio: 3 / 4;
+    font-size: 0.85rem;
   }
 
   .calendar-cell.day .day-number {
     display: block;
     font-weight: 700;
     margin-bottom: 0.25rem;
-  }
-
-  /* Medium mobile (480px–730px): show all 7 days, scroll only if needed */
-  @media (max-width: 730px) and (min-width: 481px) {
-    .mega-calendar {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: 0.5rem;
-      border-radius: 8px;
-    }
-
-    .calendar-grid-head,
-    .calendar-grid-body {
-      /* 7 cols * ~60px = 420px; fit within 480px–730px viewport with padding */
-      grid-template-columns: repeat(7, minmax(60px, 1fr));
-    }
-
-    .calendar-header {
-      position: sticky;
-      top: 0;
-      /* do not lock to viewport left so the header scrolls with the calendar container */
-      background: var(--white);
-      z-index: 2;
-      padding-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: 8px 8px 0 0;
-    }
-
-    .calendar-header h3 {
-      margin: 0;
-      font-weight: 700;
-      flex: 1 1 auto;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .calendar-header .calendar-nav {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      left: 0.75rem;
-      background: var(--white);
-      border: 1px solid var(--gray-200);
-      width: 36px;
-      height: 36px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 50%;
-    }
-
-    .calendar-header .calendar-nav[data-cal-action="next"] {
-      left: auto;
-      right: 0.75rem;
-    }
-  }
-
-  /* Smaller touch targets on narrow screens (max 480px) */
-  @media (max-width: 480px) {
-    .mega-calendar {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: 0.5rem;
-    }
-
-    .calendar-grid-head,
-    .calendar-grid-body {
-      /* allow the 7 columns to scale to small touch targets while staying aligned */
-      grid-template-columns: repeat(7, minmax(52px, 1fr));
-      gap: 0.45rem;
-    }
-
-    .calendar-header {
-      position: sticky;
-      top: 0;
-      background: var(--white);
-      z-index: 2;
-      padding-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .calendar-cell {
-      min-height: 64px;
-      padding: 0.4rem;
-      aspect-ratio: 1 / 1;
-    }
   }
 
   /* Add bottom padding so sticky mobile booking-nav doesn't cover content */
@@ -561,6 +612,38 @@
   }
 }
 
+/* ============================================
+   Responsive Horizontal Scroll - All Mobile
+   ============================================ */
+
+@media (max-width: 968px) {
+  /* Packages container - horizontal scroll */
+  #packagesContainer {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 1rem;
+  }
+
+  .package-card {
+    flex: 0 0 auto;
+    min-width: 200px;
+  }
+
+  /* Time slots - horizontal scroll */
+  .time-slots {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .time-slot {
+    flex: 0 0 auto;
+    min-width: 90px;
+  }
+}
 
 /* ============================================
    Mobile Phone Portrait (max 480px)
@@ -569,6 +652,34 @@
 @media (max-width: 480px) {
   body {
     padding-top: 0;
+  }
+
+  /* Ensure packages scroll on mobile */
+  #packagesContainer {
+    display: flex !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.75rem;
+  }
+
+  .package-card {
+    flex: 0 0 auto;
+    min-width: 160px;
+  }
+
+  /* Time slots scroll on mobile */
+  .time-slots {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.75rem;
+  }
+
+  .time-slot {
+    flex: 0 0 auto;
+    min-width: 75px;
   }
 
   .booking-layout {
@@ -1117,5 +1228,351 @@
   /* Hide carousel nav buttons */
   .cuts-carousel-btn {
     display: none !important;
+  }
+}
+
+
+
+
+
+
+/* ============================================
+   POLICY AGREEMENT SECTION
+   ============================================ */
+
+.policy-scroll-container {
+  max-height: 350px;
+  overflow-y: auto;
+  border: 2px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #fafafa, #f5f5f5);
+  margin-bottom: 1.5rem;
+  scroll-behavior: smooth;
+}
+
+.policy-scroll-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.policy-scroll-container::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+.policy-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--gray-400);
+  border-radius: 4px;
+}
+
+.policy-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-600);
+}
+
+.policy-content h3 {
+  color: var(--gray-900);
+  font-size: 1.3rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--gray-300);
+}
+
+.policy-content h4 {
+  color: var(--gray-800);
+  font-size: 1rem;
+  margin: 1.25rem 0 0.75rem 0;
+  font-weight: 600;
+}
+
+.policy-content p {
+  color: var(--gray-700);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  margin-bottom: 0.75rem;
+  text-align: justify;
+}
+
+.policy-end-marker {
+  text-align: center;
+  padding: 1.5rem 0;
+  margin-top: 1.5rem;
+  border-top: 2px dashed var(--gray-300);
+}
+
+.policy-end-marker p {
+  color: var(--gray-500);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.policy-agreement-section {
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(255, 200, 100, 0.1), rgba(255, 180, 50, 0.1));
+  border-radius: var(--radius);
+  border: 2px solid #ff9800;
+}
+
+.scroll-indicator {
+  text-align: center;
+  padding: 0.75rem;
+  background: #fff3e0;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1rem;
+  animation: pulse 2s infinite;
+}
+
+.scroll-indicator span {
+  color: #e65100;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.scroll-indicator.hidden {
+  display: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.policy-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.3s ease;
+}
+
+.policy-checkbox-label:hover {
+  background: rgba(255, 152, 0, 0.1);
+}
+
+.policy-checkbox-label input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #4caf50;
+  flex-shrink: 0;
+}
+
+.policy-checkbox-label input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.policy-checkbox-label span {
+  color: var(--gray-800);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.policy-checkbox-label input[type="checkbox"]:checked + span {
+  color: #2e7d32;
+}
+
+/* ============================================
+   LOADING OVERLAY
+   ============================================ */
+
+.loading-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 10000;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(4px);
+}
+
+.loading-overlay.active {
+  display: flex;
+  animation: fadeIn 0.3s ease;
+}
+
+.loading-content {
+  text-align: center;
+  background: white;
+  padding: 3rem 4rem;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.loading-spinner {
+  width: 60px;
+  height: 60px;
+  border: 5px solid var(--gray-200);
+  border-top: 5px solid var(--gray-900);
+  border-radius: 50%;
+  margin: 0 auto 1.5rem;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin-bottom: 0.5rem;
+}
+
+.loading-subtext {
+  font-size: 0.9rem;
+  color: var(--gray-600);
+}
+
+/* Mobile responsive for loading */
+@media (max-width: 768px) {
+  .loading-content {
+    padding: 2rem;
+    margin: 1rem;
+    width: calc(100% - 2rem);
+  }
+  
+  .loading-spinner {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .loading-text {
+    font-size: 1.1rem;
+  }
+  
+  .policy-scroll-container {
+    max-height: 50vh;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .policy-content h3 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .policy-content h4 {
+    font-size: 0.95rem;
+    margin: 1rem 0 0.5rem 0;
+  }
+  
+  .policy-content p {
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin-bottom: 0.5rem;
+  }
+  
+  .scroll-indicator {
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .policy-checkbox-label {
+    font-size: 0.9rem;
+    gap: 0.5rem;
+  }
+  
+  .policy-checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .loading-content {
+    padding: 1.5rem;
+    margin: 0.5rem;
+    width: calc(100% - 1rem);
+  }
+  
+  .loading-spinner {
+    width: 45px;
+    height: 45px;
+    border-width: 4px;
+  }
+  
+  .loading-text {
+    font-size: 1rem;
+  }
+  
+  .loading-subtext {
+    font-size: 0.8rem;
+  }
+  
+  .policy-scroll-container {
+    max-height: 45vh;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+  }
+  
+  .policy-content h3 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+  }
+  
+  .policy-content h4 {
+    font-size: 0.9rem;
+    margin: 0.75rem 0 0.4rem 0;
+  }
+  
+  .policy-content p {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    margin-bottom: 0.4rem;
+  }
+  
+  .policy-end-marker {
+    padding: 1rem 0;
+    margin-top: 1rem;
+  }
+  
+  .policy-end-marker p {
+    font-size: 0.75rem;
+  }
+  
+  .scroll-indicator {
+    padding: 0.4rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .scroll-indicator span {
+    font-size: 0.75rem;
+  }
+  
+  .policy-agreement-section {
+    padding: 0.75rem;
+    border-radius: 6px;
+  }
+  
+  .policy-checkbox-label {
+    font-size: 0.85rem;
+    gap: 0.5rem;
+    padding: 0.4rem;
+  }
+  
+  .policy-checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+  }
+  
+  .policy-checkbox-label span {
+    font-size: 0.85rem;
   }
 }

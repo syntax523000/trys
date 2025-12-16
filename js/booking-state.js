@@ -242,7 +242,7 @@ class BookingStateManager {
     
     // Validate step is within range
     if (updates.currentStep !== undefined) {
-      if (updates.currentStep < 1 || updates.currentStep > 4) {
+      if (updates.currentStep < 1 || updates.currentStep > 5) {
         errors.push('Invalid step number');
       }
     }

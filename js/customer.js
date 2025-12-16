@@ -100,9 +100,25 @@ function setupCustomerSidebarNavigation() {
 
       // Handle different submenu actions
       if (this.dataset.filter) {
-        // Filter bookings and switch to bookings view
+        // Filter bookings and stay on overview view (bookings are displayed there)
         setCustomerBookingFilter(this.dataset.filter);
-        switchCustomerView('bookings');
+        switchCustomerView('overview');
+        
+        // Also update the filter buttons to match
+        const filterGroup = document.getElementById('customerBookingFilters');
+        if (filterGroup) {
+          filterGroup.querySelectorAll('button[data-filter]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === this.dataset.filter);
+          });
+        }
+        
+        // Scroll to Recent Bookings section header
+        setTimeout(() => {
+          const bookingsSection = document.getElementById('recentBookingsSection');
+          if (bookingsSection) {
+            bookingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 150);
       } else if (this.dataset.view) {
         // Switch to specified view
         switchCustomerView(this.dataset.view);
@@ -154,7 +170,7 @@ function setupCustomerBookingFilters() {
 // Switch customer view
 function switchCustomerView(view) {
   // Hide all views
-  const views = ['overviewView', 'bookingsView', 'calendarView', 'historyView', 'accountView'];
+  const views = ['overviewView', 'bookingsView', 'calendarView', 'historyView', 'accountView', 'galleryView', 'profileView'];
   views.forEach(v => {
     const el = document.getElementById(v);
     if (el) el.style.display = 'none';
@@ -173,23 +189,39 @@ function switchCustomerView(view) {
   const targetView = document.getElementById(view + 'View');
   if (targetView) {
     targetView.style.display = 'block';
-
-    // Explicitly re-render calendar if switching to it, to ensure it has latest data
-    if (view === 'calendarView') {
-      if (typeof renderCustomerCalendar === 'function') {
-        renderCustomerCalendar();
-      }
-    }
   }
 
   // Load data if needed
   if (view === 'bookings') {
     loadUserBookings().then(() => renderCustomerSlotsList());
   } else if (view === 'calendar') {
-    getUserBookings().then(bookings => renderCustomerCalendar(bookings));
+    // Render calendar and load stats when switching to calendar view
+    renderCustomerCalendar();
+    loadCalendarViewStats();
   } else if (view === 'history') {
     renderCustomerBookingHistory();
+  } else if (view === 'gallery') {
+    renderMyPetGallery();
+  } else if (view === 'profile') {
+    loadCustomerProfile();
   }
+}
+
+// Helper function to normalize status for comparison
+function normalizeStatus(status) {
+  return (status || '').toLowerCase().replace(/\s+/g, '');
+}
+
+// Helper function to check if status is "in progress" (handles different formats)
+function isInProgressStatus(status) {
+  const normalized = normalizeStatus(status);
+  return normalized === 'inprogress' || normalized === 'in progress';
+}
+
+// Helper function to check if booking fee is paid (confirmed, in progress, or completed)
+function isBookingFeePaid(status) {
+  const normalized = normalizeStatus(status);
+  return ['confirmed', 'inprogress', 'completed'].includes(normalized);
 }
 
 // Load quick stats with clickable cards
@@ -198,13 +230,13 @@ async function loadQuickStats() {
   const totalBookings = bookings.length;
   // Slots removed
   const cancelledStatuses = ['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'];
-  const pendingBookings = bookings.filter(b => b.status === 'pending').length;
-  const confirmedBookings = bookings.filter(b => b.status === 'confirmed').length;
+  const pendingBookings = bookings.filter(b => normalizeStatus(b.status) === 'pending').length;
+  const confirmedBookings = bookings.filter(b => normalizeStatus(b.status) === 'confirmed' || isInProgressStatus(b.status)).length;
   const cancelledBookings = bookings.filter(b => cancelledStatuses.includes(b.status)).length;
 
   // Calculate total spent on confirmed bookings
   const totalSpent = bookings
-    .filter(b => b.status === 'confirmed' || b.status === 'completed')
+    .filter(b => normalizeStatus(b.status) === 'confirmed' || normalizeStatus(b.status) === 'completed')
     .reduce((sum, b) => sum + (b.totalPrice || b.cost?.subtotal || 0), 0);
 
   const statsContainer = document.getElementById('quickStats');
@@ -260,11 +292,13 @@ function sortCustomerBookings(sortType) {
     }
   });
 
-  // Scroll to Recent Bookings section instead of switching views
-  const bookingsSection = document.querySelector('[id="bookingsContainer"]')?.closest('div');
-  if (bookingsSection) {
-    bookingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+  // Scroll to Recent Bookings section header
+  setTimeout(() => {
+    const bookingsSection = document.getElementById('recentBookingsSection');
+    if (bookingsSection) {
+      bookingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, 150);
 }
 
 function getFilteredCustomerBookings(bookings = customerBookingsCache) {
@@ -277,13 +311,14 @@ function getFilteredCustomerBookings(bookings = customerBookingsCache) {
   let result = [];
   switch (filter) {
     case 'pending':
-      result = bookings.filter(b => b.status === 'pending');
+      result = bookings.filter(b => normalizeStatus(b.status) === 'pending');
       break;
     case 'confirmed':
-      result = bookings.filter(b => b.status === 'confirmed');
+      // Include both 'confirmed' and 'In Progress' statuses
+      result = bookings.filter(b => normalizeStatus(b.status) === 'confirmed' || isInProgressStatus(b.status));
       break;
     case 'completed':
-      result = bookings.filter(b => b.status === 'completed');
+      result = bookings.filter(b => normalizeStatus(b.status) === 'completed');
       break;
     case 'cancelled':
       result = bookings.filter(b => cancelledStatuses.includes(b.status));
@@ -291,7 +326,7 @@ function getFilteredCustomerBookings(bookings = customerBookingsCache) {
     case 'upcoming':
       result = bookings.filter(b => {
         if (cancelledStatuses.includes(b.status)) return false;
-        if (b.status === 'completed') return false;
+        if (normalizeStatus(b.status) === 'completed') return false;
         const bookingDate = new Date(b.date + ' ' + b.time);
         return bookingDate >= new Date();
       });
@@ -429,17 +464,16 @@ window.renderCommunityShowcase = renderCommunityShowcase;
 
 // Minimal helper: return badge class for a booking status
 function getCustomerStatusClass(status) {
-  switch ((status || '').toLowerCase()) {
-    case 'pending': return 'badge-warning';
-    case 'confirmed': return 'badge-success';
+  switch ((status || '').toLowerCase().replace(/\s+/g, '')) {
+    case 'pending': return 'badge-pending';
+    case 'confirmed': return 'badge-confirmed';
     case 'inprogress':
-    case 'in_progress':
-    case 'in progress': return 'badge-info';
-    case 'completed': return 'badge-primary';
+    case 'in_progress': return 'badge-inprogress';
+    case 'completed': return 'badge-completed';
     case 'cancelled':
     case 'cancelledbycustomer':
-    case 'cancelledbyadmin': return 'badge-danger';
-    default: return 'badge-secondary';
+    case 'cancelledbyadmin': return 'badge-cancelled';
+    default: return 'badge-gray';
   }
 }
 window.getCustomerStatusClass = getCustomerStatusClass;
@@ -448,6 +482,15 @@ window.getCustomerStatusClass = getCustomerStatusClass;
 function setCustomerBookingFilter(filter) {
   customerBookingState.filter = filter || 'all';
   customerBookingState.page = 1;
+  
+  // Update filter buttons active state
+  const filterGroup = document.getElementById('customerBookingFilters');
+  if (filterGroup) {
+    filterGroup.querySelectorAll('button[data-filter]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+  }
+  
   // Prefer the async renderer if present
   try {
     const r = (typeof renderCustomerBookings === 'function') ? renderCustomerBookings() : (typeof loadUserBookings === 'function' ? loadUserBookings() : null);
@@ -501,28 +544,14 @@ window.renderCustomerSlotsList = renderCustomerSlotsList;
 // Minimal calendar renderer used by dashboard view
 async function renderCustomerCalendar(userBookings = []) {
   try {
-    // If userBookings IS passed but empty, it might be intentional or default.
-    // However, if we want to ensure data is loaded, let's double check.
-    // We'll refetch if the array is empty to be safe, filtering by current user.
-    let displayBookings = userBookings;
-
-    if (!displayBookings || displayBookings.length === 0) {
-      // Attempt to fetch current user's bookings
-      try {
-        const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-        if (user) {
-          let all = typeof getBookingsSync === 'function' ? getBookingsSync() : [];
-          if (all.length === 0 && typeof getBookings === 'function') all = await getBookings();
-
-          // Filter for THIS user
-          displayBookings = all.filter(b => b.customerName === user.username || b.firstName === user.firstName);
-        }
-      } catch (err) {
-        console.warn('Could not auto-fetch user bookings for calendar:', err);
-      }
+    // Get current user
+    const user = await getCurrentUser();
+    if (!user) {
+      console.warn('No user logged in for calendar view');
+      return;
     }
 
-    // Fetch ALL bookings to determine blackout/capacity status
+    // Fetch ALL bookings for capacity calculation
     let allBookings = [];
     try {
       allBookings = typeof getBookings === 'function' ? await getBookings() : [];
@@ -530,7 +559,11 @@ async function renderCustomerCalendar(userBookings = []) {
       allBookings = typeof getBookingsSync === 'function' ? getBookingsSync() : [];
     }
 
-    // Fetch absences
+    // Filter for THIS user's bookings to display on calendar
+    const customerBookings = allBookings.filter(b => b.userId === user.id);
+    console.log('[CustomerCalendar] Found', customerBookings.length, 'bookings for user', user.id);
+
+    // Fetch absences for blackout dates
     let absences = [];
     try {
       absences = typeof getStaffAbsences === 'function' ? await getStaffAbsences() : [];
@@ -538,12 +571,23 @@ async function renderCustomerCalendar(userBookings = []) {
       absences = typeof getStaffAbsencesSync === 'function' ? getStaffAbsencesSync() : [];
     }
 
-    if (typeof buildCalendarDataset === 'function' && typeof renderMegaCalendar === 'function') {
-      // Pass allBookings for capacity, displayBookings for user-specific display list
-      const dataset = buildCalendarDataset(allBookings, absences, displayBookings);
-      renderMegaCalendar('customerCalendar', dataset);
+    // ALWAYS use admin-style simple calendar - shows only customer's own bookings
+    // No slots, no availability - just clean booking list like admin calendar
+    renderSimpleCustomerCalendar(customerBookings);
+  } catch (e) { 
+    console.warn('renderCustomerCalendar failed:', e);
+    // Fallback to simple calendar
+    try {
+      const user = await getCurrentUser();
+      if (user) {
+        const allBookings = await getBookings();
+        const customerBookings = allBookings.filter(b => b.userId === user.id);
+        renderSimpleCustomerCalendar(customerBookings);
+      }
+    } catch (fallbackError) {
+      console.error('Calendar fallback also failed:', fallbackError);
     }
-  } catch (e) { console.warn('renderCustomerCalendar failed:', e); }
+  }
 }
 window.renderCustomerCalendar = renderCustomerCalendar;
 
@@ -637,10 +681,76 @@ async function openBookingDetailModal(bookingId) {
     ? getBookingDisplayCode(booking)
     : (booking.shortId || booking.id);
 
-  // Use unified price breakdown from main.js
-  const priceBreakdownHtml = typeof generateUnifiedPriceBreakdown === 'function'
-    ? generateUnifiedPriceBreakdown(booking)
-    : '';
+  // Generate price breakdown
+  const cost = booking.cost || {};
+  const bookingFee = cost.bookingFee || 100;
+  const packagePrice = cost.packagePrice || booking.totalPrice || 0;
+  
+  // Get add-ons
+  let addOnsArray = [];
+  if (booking.addOns && Array.isArray(booking.addOns) && booking.addOns.length > 0) {
+    addOnsArray = booking.addOns.map(addon => {
+      if (typeof addon === 'object' && addon.name && addon.price) {
+        return { label: addon.name, price: addon.price };
+      }
+      if (typeof addon === 'string') {
+        if (addon === 'toothbrush') return { label: 'Toothbrush', price: 25 };
+        if (addon === 'dematting') return { label: 'De-matting', price: 80 };
+        if (addon === 'anti-tick-flea') return { label: 'Anti-Tick & Flea', price: 150 };
+        return { label: addon, price: 0 };
+      }
+      return { label: 'Unknown', price: 0 };
+    });
+  }
+  const addOnsTotal = addOnsArray.reduce((sum, addon) => sum + (addon.price || 0), 0);
+  const subtotal = packagePrice + addOnsTotal;
+  const isPaidStatus = isBookingFeePaid(booking.status);
+  const totalAmount = isPaidStatus ? Math.max(0, subtotal - bookingFee) : subtotal;
+  
+  // Build price breakdown HTML
+  const priceBreakdownHtml = `
+    <div style="border-top: 2px solid var(--gray-200); margin-top: 1rem; padding-top: 1rem;">
+      <h4 style="margin-bottom: 0.75rem; font-size: 1rem; color: var(--gray-900);">💰 Price Breakdown</h4>
+      
+      ${packagePrice > 0 ? `
+        <div class="summary-item">
+          <span class="summary-label">📦 Package:</span>
+          <span class="summary-value" style="font-weight: 600;">${formatCurrency(packagePrice)}</span>
+        </div>
+      ` : ''}
+      
+      ${addOnsArray.length > 0 ? `
+        <div style="margin: 0.5rem 0;">
+          <span style="color: var(--gray-700); font-weight: 500;">✨ Add-ons:</span>
+          ${addOnsArray.map(addon => `
+            <div class="summary-item" style="margin-left: 1rem;">
+              <span class="summary-label" style="color: var(--gray-600);">• ${escapeHtml(addon.label)}</span>
+              <span class="summary-value">${formatCurrency(addon.price)}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      
+      ${(addOnsArray.length > 0 || isPaidStatus) ? `
+        <div class="summary-item" style="border-top: 1px solid var(--gray-200); padding-top: 0.5rem; margin-top: 0.5rem;">
+          <span class="summary-label" style="font-weight: 600;">Subtotal:</span>
+          <span class="summary-value" style="font-weight: 700; font-size: 1.1rem;">${formatCurrency(subtotal)}</span>
+        </div>
+      ` : ''}
+      
+      ${isPaidStatus ? `
+        <div class="summary-item" style="background: #e8f5e9; padding: 0.5rem; border-radius: 0.25rem; margin-top: 0.5rem;">
+          <span class="summary-label" style="color: #2e7d32; font-weight: 500;">🎫 Booking Fee (Paid):</span>
+          <span class="summary-value" style="color: #2e7d32; font-weight: 600;">- ${formatCurrency(bookingFee)}</span>
+        </div>
+      ` : ''}
+      
+      <div class="summary-item" style="background: #e8f5e9; padding: 0.75rem; border-radius: 0.25rem; margin-top: 0.5rem; border-left: 4px solid #2e7d32;">
+        <span class="summary-label" style="color: #2e7d32; font-weight: 700; font-size: 1.1rem;">💰 Total Amount:</span>
+        <span class="summary-value" style="color: #2e7d32; font-weight: 700; font-size: 1.2rem;">${formatCurrency(totalAmount)}</span>
+      </div>
+    </div>
+  `;
 
   showModal(`
     <h3>Booking Details</h3>
@@ -933,8 +1043,43 @@ async function renderCustomerBookingHistory() {
       const booking = bookings.find(b => b.id === entry.bookingId);
       const displayId = booking ? (typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id) : entry.bookingId;
       const actionLabel = formatCustomerHistoryAction(entry.action);
-      const totalPrice = booking ? (booking.totalPrice || booking.cost?.subtotal || 0) : 0;
-      const priceDisplay = typeof formatCurrency === 'function' ? formatCurrency(totalPrice) : `₱${totalPrice}`;
+      
+      // Calculate BALANCE TO PAY (what customer actually pays on visit)
+      let balanceToPay = 0;
+      if (booking) {
+        const cost = booking.cost || {};
+        const bookingFee = cost.bookingFee || 100;
+        const isPaidStatus = isBookingFeePaid(booking.status);
+        const packagePrice = cost.packagePrice || 0;
+        
+        // Get add-ons total
+        let addOnsTotal = 0;
+        if (booking.addOns && Array.isArray(booking.addOns)) {
+          addOnsTotal = booking.addOns.reduce((sum, addon) => {
+            if (typeof addon === 'object' && addon.price) return sum + addon.price;
+            return sum;
+          }, 0);
+        } else if (cost.addOns && Array.isArray(cost.addOns)) {
+          addOnsTotal = cost.addOns.reduce((sum, addon) => sum + (addon.price || 0), 0);
+        }
+        
+        const servicesTotal = cost.services?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+        const subtotal = packagePrice + addOnsTotal + servicesTotal;
+        
+        if (isPaidStatus && subtotal > 0) {
+          balanceToPay = Math.max(0, subtotal - bookingFee);
+        } else if (cost.totalAmount) {
+          balanceToPay = isPaidStatus ? Math.max(0, cost.totalAmount - bookingFee) : cost.totalAmount;
+        } else if (booking.totalAmount || booking.totalPrice) {
+          const total = booking.totalAmount || booking.totalPrice;
+          balanceToPay = isPaidStatus ? Math.max(0, total - bookingFee) : total;
+        }
+      }
+      
+      const priceDisplay = balanceToPay > 0 
+        ? (typeof formatCurrency === 'function' ? formatCurrency(balanceToPay) : `₱${balanceToPay}`)
+        : '—';
+      
       return `
             <tr>
               <td>
@@ -1035,11 +1180,36 @@ function formatCustomerHistoryAction(action = '') {
   if (normalized.includes('no-show')) {
     return 'No Show';
   }
-  return 'Pending';
+  if (normalized.includes('service started') || normalized.includes('in-progress') || normalized.includes('inprogress') || normalized.includes('in progress')) {
+    return 'In Progress';
+  }
+  if (normalized.includes('pending')) {
+    return 'Pending';
+  }
+  // Default fallback - return the original action if it doesn't match any known pattern
+  return action || 'Pending';
 }
 
 function renderCustomerHistoryFallback(bookings = []) {
-  if (!bookings.length) return '<p class="empty-state">No booking history yet.</p>';
+  // Only show completed bookings and cancelled bookings that were confirmed/inProgress
+  // Don't show cancelled bookings that were only pending (waste of data)
+  const historyBookings = bookings.filter(b => {
+    const status = (b.status || '').toLowerCase();
+    const isCancelled = status === 'cancelled' || status === 'cancelledbycustomer' || status === 'cancelledbyadmin';
+    
+    // Include completed bookings
+    if (status === 'completed') return true;
+    
+    // Include cancelled bookings ONLY if they were confirmed or inProgress before cancellation
+    // Check if booking has a previousStatus or if it was confirmed before being cancelled
+    if (isCancelled && (b.previousStatus === 'confirmed' || b.previousStatus === 'inProgress' || b.wasConfirmed)) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  if (!historyBookings.length) return '<p class="empty-state">No booking history yet. Completed and cancelled bookings will appear here.</p>';
   return `
     <div class="table-container">
       <table>
@@ -1054,22 +1224,51 @@ function renderCustomerHistoryFallback(bookings = []) {
           </tr>
         </thead>
         <tbody>
-          ${bookings.map(booking => {
+          ${historyBookings.map(booking => {
     const code = typeof getBookingDisplayCode === 'function'
       ? getBookingDisplayCode(booking)
       : booking.id;
 
-    // Calculate price from booking cost
-    let price = '—';
-    if (booking.cost && booking.cost.totalAmount) {
-      price = typeof formatCurrency === 'function'
-        ? formatCurrency(booking.cost.totalAmount)
-        : `₱${booking.cost.totalAmount}`;
-    } else if (booking.totalAmount) {
-      price = typeof formatCurrency === 'function'
-        ? formatCurrency(booking.totalAmount)
-        : `₱${booking.totalAmount}`;
+    // Calculate the BALANCE TO PAY (what customer actually pays on visit)
+    // Formula: Subtotal (package + add-ons) - Booking Fee (if paid)
+    let balanceToPay = 0;
+    const cost = booking.cost || {};
+    const bookingFee = cost.bookingFee || 100;
+    const isPaidStatus = isBookingFeePaid(booking.status);
+    
+    // Calculate subtotal from package price + add-ons
+    const packagePrice = cost.packagePrice || 0;
+    
+    // Get add-ons total
+    let addOnsTotal = 0;
+    if (booking.addOns && Array.isArray(booking.addOns)) {
+      addOnsTotal = booking.addOns.reduce((sum, addon) => {
+        if (typeof addon === 'object' && addon.price) return sum + addon.price;
+        return sum;
+      }, 0);
+    } else if (cost.addOns && Array.isArray(cost.addOns)) {
+      addOnsTotal = cost.addOns.reduce((sum, addon) => sum + (addon.price || 0), 0);
     }
+    
+    // Get single services total
+    const servicesTotal = cost.services?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+    
+    // Calculate subtotal
+    const subtotal = packagePrice + addOnsTotal + servicesTotal;
+    
+    // Balance to pay = Subtotal - Booking Fee (if status is confirmed/completed)
+    if (isPaidStatus && subtotal > 0) {
+      balanceToPay = Math.max(0, subtotal - bookingFee);
+    } else if (cost.totalAmount) {
+      // Fallback to totalAmount if available
+      balanceToPay = isPaidStatus ? Math.max(0, cost.totalAmount - bookingFee) : cost.totalAmount;
+    } else if (booking.totalAmount) {
+      balanceToPay = isPaidStatus ? Math.max(0, booking.totalAmount - bookingFee) : booking.totalAmount;
+    }
+    
+    const price = balanceToPay > 0 
+      ? (typeof formatCurrency === 'function' ? formatCurrency(balanceToPay) : `₱${balanceToPay}`)
+      : '—';
 
     return `
               <tr>
@@ -1077,7 +1276,7 @@ function renderCustomerHistoryFallback(bookings = []) {
                 <td>${escapeHtml(code)}</td>
                 <td>${escapeHtml(booking.petName || '—')}</td>
                 <td>${escapeHtml(booking.packageName || '—')}</td>
-                <td style="font-weight: 600; color: var(--gray-900);">${price}</td>
+                <td><button class="btn btn-sm" style="background: #2e7d32; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;" onclick="openCustomerPricingBreakdownModal('${booking.id}')">${price}</button></td>
                 <td>${escapeHtml(formatBookingStatus(booking.status))}</td>
               </tr>
             `;
@@ -1187,27 +1386,143 @@ async function saveReview(bookingId) {
 // Expose globally for inline onclick attributes
 window.saveReview = saveReview;
 
-// Safe renderWarningPanel: minimal UI so dashboard won't crash if original impl is missing
-async function renderWarningPanel(user) {
-  const container = document.getElementById('customerWarningPanel') || document.getElementById('customerHeader');
+// Render warning panel with progress indicator towards ban (5 warnings = ban)
+async function renderWarningPanel() {
+  const container = document.getElementById('warningPanel');
   if (!container) return;
+  
   try {
-    if (user?.isBanned) {
-      container.insertAdjacentHTML('afterbegin',
-        `<div class="alert alert-danger" style="margin-bottom:0.75rem;">Account flagged: your access is restricted. Contact support.</div>`);
+    // Get current user
+    const user = await getCurrentUser();
+    if (!user) {
+      container.style.display = 'none';
       return;
     }
-    const warnings = user?.warnings || user?.warningCount || 0;
-    if (warnings && warnings > 0) {
-      container.insertAdjacentHTML('afterbegin',
-        `<div class="alert alert-warning" style="margin-bottom:0.75rem;">You have ${warnings} warning(s). Please check your messages.</div>`);
+
+    // Get user's bookings to count no-shows and late cancellations
+    const bookings = await getUserBookings();
+    const noShowCount = bookings.filter(b => b.status === 'noShow' || b.status === 'no-show' || b.noShow === true).length;
+    const lateCancelCount = bookings.filter(b => {
+      if (!['cancelled', 'cancelledByCustomer'].includes(b.status)) return false;
+      // Check if cancelled within 24 hours of appointment
+      if (b.cancelledAt && b.date && b.time) {
+        const appointmentTime = new Date(b.date + ' ' + b.time).getTime();
+        const cancelTime = b.cancelledAt;
+        const hoursBeforeAppointment = (appointmentTime - cancelTime) / (1000 * 60 * 60);
+        return hoursBeforeAppointment < 24 && hoursBeforeAppointment >= 0;
+      }
+      return false;
+    }).length;
+    
+    // Total warnings = no-shows + late cancellations (or use user.warnings if stored)
+    const totalWarnings = user.warnings || user.warningCount || (noShowCount + lateCancelCount);
+    const maxWarnings = 5;
+    const isBanned = user.isBanned || totalWarnings >= maxWarnings;
+    
+    // Generate warning circles (5 circles)
+    const generateWarningCircles = (count, max) => {
+      let circles = '';
+      for (let i = 1; i <= max; i++) {
+        const isFilled = i <= count;
+        const color = i <= 2 ? '#f9a825' : i <= 4 ? '#e65100' : '#c62828';
+        circles += `<div style="width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; ${isFilled ? `background: ${color}; color: white;` : 'background: var(--gray-200); color: var(--gray-400);'}">${i}</div>`;
+      }
+      return circles;
+    };
+    
+    // If banned
+    if (isBanned) {
+      container.style.display = 'block';
+      container.innerHTML = `
+        <div style="background: #ffebee; border-radius: 0.75rem; padding: 1rem; border: 1px solid #ffcdd2;">
+          <div style="text-align: center; margin-bottom: 1rem;">
+            <span style="font-size: 2.5rem;">🚫</span>
+            <h4 style="margin: 0.5rem 0 0.25rem 0; color: #c62828; font-size: 1.1rem;">Account Restricted</h4>
+            <p style="color: #b71c1c; font-size: 0.85rem; margin: 0;">5/5 Warnings Reached</p>
+          </div>
+          
+          <div style="display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 1rem;">
+            ${generateWarningCircles(5, 5)}
+          </div>
+          
+          <div style="background: white; border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 1rem;">
+            <p style="color: var(--gray-700); font-size: 0.85rem; margin: 0 0 0.5rem 0; font-weight: 600;">How to Restore Access:</p>
+            <ol style="color: var(--gray-600); font-size: 0.8rem; margin: 0; padding-left: 1.25rem;">
+              <li style="margin-bottom: 0.25rem;">Pay the ₱500 uplift fee via GCash/Bank Transfer</li>
+              <li style="margin-bottom: 0.25rem;">Click "Request Uplift" below</li>
+              <li style="margin-bottom: 0.25rem;">Upload your proof of payment</li>
+              <li>Wait for admin approval (1-2 business days)</li>
+            </ol>
+          </div>
+          
+          <button class="btn" onclick="document.getElementById('upliftModal').style.display='flex'" 
+            style="width: 100%; background: #c62828; color: white; border: none; padding: 0.75rem; font-weight: 600;">
+            📤 Request Uplift (₱500)
+          </button>
+        </div>
+      `;
       return;
     }
-    // no warnings — remove any previous panel (non-destructive)
-    const existing = container.querySelector('.alert');
-    if (existing) existing.remove();
+    
+    // If has warnings but not banned yet
+    if (totalWarnings > 0) {
+      container.style.display = 'block';
+      const warningsLeft = maxWarnings - totalWarnings;
+      const bgColor = totalWarnings >= 4 ? '#ffebee' : totalWarnings >= 3 ? '#fff3e0' : '#fffde7';
+      const borderColor = totalWarnings >= 4 ? '#ffcdd2' : totalWarnings >= 3 ? '#ffe0b2' : '#fff9c4';
+      const textColor = totalWarnings >= 4 ? '#c62828' : totalWarnings >= 3 ? '#e65100' : '#f57f17';
+      
+      container.innerHTML = `
+        <div style="background: ${bgColor}; border-radius: 0.75rem; padding: 1rem; border: 1px solid ${borderColor};">
+          <div style="text-align: center; margin-bottom: 0.75rem;">
+            <span style="font-size: 2rem;">${totalWarnings >= 4 ? '😰' : totalWarnings >= 3 ? '😟' : '⚠️'}</span>
+            <h4 style="margin: 0.25rem 0; color: ${textColor}; font-size: 1rem;">Warning Status</h4>
+            <p style="color: ${textColor}; font-size: 1.5rem; font-weight: 700; margin: 0;">${totalWarnings}/${maxWarnings}</p>
+          </div>
+          
+          <div style="display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            ${generateWarningCircles(totalWarnings, maxWarnings)}
+          </div>
+          
+          <p style="text-align: center; color: var(--gray-600); font-size: 0.8rem; margin: 0;">
+            ${totalWarnings >= 4 
+              ? '⚠️ <strong style="color: #c62828;">Last warning!</strong> One more and your account will be restricted.' 
+              : `${warningsLeft} more warning${warningsLeft > 1 ? 's' : ''} before account restriction`}
+          </p>
+          
+          <div style="background: white; border-radius: 0.5rem; padding: 0.5rem; margin-top: 0.75rem;">
+            <p style="color: var(--gray-500); font-size: 0.75rem; margin: 0; text-align: center;">
+              💡 Warnings are given for no-shows and late cancellations (within 24hrs)
+            </p>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    
+    // No warnings - show good standing
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div style="background: #e8f5e9; border-radius: 0.75rem; padding: 1rem; border: 1px solid #c8e6c9;">
+        <div style="text-align: center;">
+          <span style="font-size: 2rem;">✨</span>
+          <h4 style="margin: 0.25rem 0; color: #2e7d32; font-size: 1rem;">Good Standing</h4>
+          <p style="color: #388e3c; font-size: 1.5rem; font-weight: 700; margin: 0;">0/${maxWarnings}</p>
+        </div>
+        
+        <div style="display: flex; justify-content: center; gap: 0.5rem; margin: 0.75rem 0;">
+          ${generateWarningCircles(0, maxWarnings)}
+        </div>
+        
+        <p style="text-align: center; color: #1b5e20; font-size: 0.8rem; margin: 0;">
+          🎉 No warnings! Keep up the good attendance.
+        </p>
+      </div>
+    `;
+    
   } catch (e) {
     console.warn('renderWarningPanel failed:', e);
+    container.style.display = 'none';
   }
 }
 window.renderWarningPanel = renderWarningPanel;
@@ -1234,7 +1549,7 @@ function showModal(html) {
       existing.style.display = 'flex';
       existing.style.alignItems = 'center';
       existing.style.justifyContent = 'center';
-      existing.innerHTML = `<div id="simpleFallbackModalInner" style="background:#fff; max-width:860px; width:90%; max-height:90%; overflow:auto; padding:1rem; border-radius:8px;"></div>`;
+      existing.innerHTML = `<div id="simpleFallbackModalInner" style="background:#fff; max-width:480px; width:90%; max-height:90%; overflow:auto; padding:1.25rem; border-radius:12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2);"></div>`;
       document.body.appendChild(existing);
       existing.addEventListener('click', (ev) => {
         if (ev.target === existing) existing.style.display = 'none';
@@ -1336,6 +1651,130 @@ async function loadUserBookings() {
 window.getUserBookings = getUserBookings;
 window.loadUserBookings = loadUserBookings;
 
+// Render My Pet's Gallery - shows before/after photos from customer's completed bookings
+async function renderMyPetGallery() {
+  const container = document.getElementById('myPetGalleryContainer');
+  if (!container) return;
+
+  container.innerHTML = '<p style="text-align: center; color: var(--gray-500);">Loading your pet gallery...</p>';
+
+  try {
+    const bookings = await getUserBookings();
+    
+    // Filter bookings that have before/after images
+    const galleryBookings = bookings.filter(b => b.beforeImage || b.afterImage);
+
+    if (!galleryBookings.length) {
+      container.innerHTML = `
+        <div class="card" style="text-align: center; padding: 3rem;">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">📷</div>
+          <h3 style="margin-bottom: 0.5rem; color: var(--gray-700);">No Photos Yet</h3>
+          <p style="color: var(--gray-500);">Before & after photos will appear here after your grooming sessions are completed.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = galleryBookings.map(booking => {
+      const bookingCode = typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id;
+      const isPublic = booking.isPublicGallery || false;
+      
+      return `
+        <div class="card" style="margin-bottom: 1.5rem; overflow: hidden;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0;">
+            ${booking.beforeImage ? `
+              <div style="position: relative;">
+                <img src="${booking.beforeImage}" alt="Before" style="width: 100%; height: 200px; object-fit: cover;">
+                <span style="position: absolute; top: 0.5rem; left: 0.5rem; background: rgba(0,0,0,0.7); color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Before</span>
+              </div>
+            ` : '<div style="background: var(--gray-100); height: 200px; display: flex; align-items: center; justify-content: center; color: var(--gray-400);">No before photo</div>'}
+            ${booking.afterImage ? `
+              <div style="position: relative;">
+                <img src="${booking.afterImage}" alt="After" style="width: 100%; height: 200px; object-fit: cover;">
+                <span style="position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(0,0,0,0.7); color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">After</span>
+              </div>
+            ` : '<div style="background: var(--gray-100); height: 200px; display: flex; align-items: center; justify-content: center; color: var(--gray-400);">No after photo</div>'}
+          </div>
+          <div style="padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <h4 style="margin: 0;">${escapeHtml(booking.petName || 'Pet')}</h4>
+              <span class="badge ${getCustomerStatusClass(booking.status)}">${formatBookingStatus(booking.status)}</span>
+            </div>
+            <p style="color: var(--gray-600); font-size: 0.9rem; margin: 0.25rem 0;">
+              <strong>Package:</strong> ${escapeHtml(booking.packageName || 'N/A')}
+            </p>
+            <p style="color: var(--gray-600); font-size: 0.9rem; margin: 0.25rem 0;">
+              <strong>Date:</strong> ${formatDate ? formatDate(booking.date) : booking.date}
+            </p>
+            <p style="color: var(--gray-600); font-size: 0.9rem; margin: 0.25rem 0;">
+              <strong>Groomer:</strong> ${escapeHtml(booking.groomerName || 'N/A')}
+            </p>
+            ${booking.groomingNotes ? `
+              <p style="color: var(--gray-600); font-size: 0.9rem; margin: 0.25rem 0;">
+                <strong>Notes:</strong> ${escapeHtml(booking.groomingNotes)}
+              </p>
+            ` : ''}
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200); display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 0.85rem; color: var(--gray-600);">Share to Reviews:</span>
+                <label class="toggle-switch" style="position: relative; display: inline-block; width: 44px; height: 24px;">
+                  <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="toggleGalleryPublic('${booking.id}', this.checked)" style="opacity: 0; width: 0; height: 0;">
+                  <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: ${isPublic ? '#2e7d32' : '#ccc'}; transition: 0.3s; border-radius: 24px;"></span>
+                  <span style="position: absolute; content: ''; height: 18px; width: 18px; left: ${isPublic ? '23px' : '3px'}; bottom: 3px; background-color: white; transition: 0.3s; border-radius: 50%;"></span>
+                </label>
+              </div>
+              <span style="font-size: 0.75rem; color: ${isPublic ? '#2e7d32' : 'var(--gray-500)'}; font-weight: 500;">
+                ${isPublic ? '✓ Visible on Reviews' : 'Private'}
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    console.error('renderMyPetGallery failed:', e);
+    container.innerHTML = '<p class="empty-state" style="color: var(--danger);">Failed to load gallery. Please try again.</p>';
+  }
+}
+window.renderMyPetGallery = renderMyPetGallery;
+
+// Toggle gallery public/private status
+async function toggleGalleryPublic(bookingId, isPublic) {
+  try {
+    let bookings = [];
+    if (typeof getBookings === 'function') {
+      bookings = await getBookings();
+    }
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) {
+      customAlert.error('Booking not found');
+      return;
+    }
+
+    booking.isPublicGallery = isPublic;
+
+    if (typeof updateBooking === 'function') {
+      await updateBooking(booking);
+    } else if (typeof saveBookings === 'function') {
+      await saveBookings(bookings);
+    }
+
+    // Re-render gallery to update UI
+    renderMyPetGallery();
+    
+    if (isPublic) {
+      customAlert.success('Photo shared to Reviews page!');
+    } else {
+      customAlert.success('Photo set to private.');
+    }
+  } catch (e) {
+    console.error('toggleGalleryPublic failed:', e);
+    customAlert.error('Failed to update. Please try again.');
+  }
+}
+window.toggleGalleryPublic = toggleGalleryPublic;
+
 // Ensure required helpers exist early (fallbacks) so loadCustomerDashboard can call them safely
 if (typeof window.renderCommunityShowcase !== 'function') {
   async function renderCommunityShowcase() {
@@ -1408,6 +1847,11 @@ async function startCancelBooking(bookingId) {
         booking = all.find(b => b.id === bookingId || b.shortId === bookingId) || null;
       }
       if (!booking) { customAlert.error('Booking not found.'); return; }
+      
+      // Track previous status before cancelling (for history filtering)
+      booking.previousStatus = booking.status;
+      booking.wasConfirmed = normalizeStatus(booking.status) === 'confirmed' || isInProgressStatus(booking.status);
+      
       booking.status = 'cancelledByCustomer';
       booking.cancellationNote = booking.cancellationNote || 'Cancelled by customer';
       booking.cancelledAt = Date.now();
@@ -1500,77 +1944,80 @@ async function openCustomerPricingBreakdownModal(bookingId) {
   const addOnsTotal = addOnsArray.reduce((sum, addon) => sum + (addon.price || 0), 0);
   const servicesTotal = cost.services?.reduce((sum, service) => sum + (service.price || 0), 0) || 0;
   
-  // Calculate correct total: Total Amount = Subtotal - Booking Fee (MINUS, not plus!)
+  // Calculate correct total based on status
+  // - For PENDING: Show full subtotal (customer hasn't paid booking fee yet)
+  // - For CONFIRMED/IN PROGRESS/COMPLETED: Show subtotal minus booking fee (already paid)
   const subtotal = packagePrice + servicesTotal + addOnsTotal;
-  const totalAmount = Math.max(0, subtotal - bookingFee);
+  const isPaidStatus = isBookingFeePaid(booking.status);
+  const totalAmount = isPaidStatus ? Math.max(0, subtotal - bookingFee) : subtotal;
 
   const modalContent = `
-    <div style="max-width: 500px;">
-      <h2 style="margin-bottom: 1.5rem; color: var(--gray-900);">💰 Pricing Breakdown</h2>
+    <div style="width: 100%; max-width: 450px; margin: 0 auto;">
+      <h2 style="margin-bottom: 1rem; color: var(--gray-900);">💰 Pricing Breakdown</h2>
       
-      <div style="background: var(--gray-50); padding: 1.5rem; border-radius: var(--radius); margin-bottom: 1.5rem;">
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem;">
-          <span style="color: var(--gray-700); font-weight: 500;">Booking ID:</span>
+      <div style="background: var(--gray-50); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span style="color: var(--gray-700);">Booking ID:</span>
           <span style="font-weight: 600; color: var(--gray-900);">${escapeHtml(typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id)}</span>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem;">
-          <span style="color: var(--gray-700); font-weight: 500;">Pet:</span>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+          <span style="color: var(--gray-700);">Pet:</span>
           <span style="font-weight: 600; color: var(--gray-900);">${escapeHtml(booking.petName)}</span>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem;">
-          <span style="color: var(--gray-700); font-weight: 500;">Package:</span>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--gray-700);">Package:</span>
           <span style="font-weight: 600; color: var(--gray-900);">${escapeHtml(booking.packageName)}</span>
         </div>
       </div>
 
-      <div style="border-top: 2px solid var(--gray-200); padding-top: 1rem; margin-bottom: 1rem;">
-        <h3 style="margin-bottom: 1rem; font-size: 1rem; color: var(--gray-900);">Cost Breakdown</h3>
+      <div style="border-top: 1px solid #e0e0e0; padding-top: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--gray-900);">Cost Breakdown</h3>
         
         ${packagePrice > 0 ? `
-          <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
             <span style="color: var(--gray-700);">📦 Package:</span>
             <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(packagePrice)}</span>
           </div>
         ` : ''}
 
         ${servicesTotal > 0 ? `
-          <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 0.75rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
             <span style="color: var(--gray-700);">🛁 Single Services:</span>
             <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(servicesTotal)}</span>
           </div>
         ` : ''}
 
         ${addOnsArray.length > 0 ? `
-          <div style="margin-bottom: 0.75rem;">
-            <span style="color: var(--gray-700); font-weight: 500;">✨ Add-ons:</span>
+          <div style="margin-bottom: 0.5rem;">
+            <span style="color: var(--gray-700);">✨ Add-ons:</span>
             ${addOnsArray.map(addon => `
-              <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-top: 0.5rem; margin-left: 1rem;">
-                <span style="color: var(--gray-600);">• ${escapeHtml(addon.label)}</span>
+              <div style="display: flex; justify-content: space-between; margin-top: 0.35rem; margin-left: 1rem;">
+                <span style="color: var(--gray-600); font-size: 0.9rem;">• ${escapeHtml(addon.label)}</span>
                 <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(addon.price)}</span>
               </div>
             `).join('')}
           </div>
         ` : ''}
 
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--gray-300);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #e0e0e0;">
           <span style="color: var(--gray-700); font-weight: 600;">Subtotal:</span>
-          <span style="font-weight: 700; color: var(--gray-900); font-size: 1.1rem;">${formatCurrency(subtotal)}</span>
+          <span style="font-weight: 700; color: var(--gray-900);">${formatCurrency(subtotal)}</span>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem; background: #fff3cd; padding: 0.75rem; border-radius: 0.25rem;">
-          <span style="color: var(--danger, #dc3545); font-weight: 500;">🎫 Booking Fee (Paid):</span>
-          <span style="font-weight: 600; color: var(--danger, #dc3545);">- ${formatCurrency(bookingFee)}</span>
+        ${isPaidStatus ? `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; background: #e8f5e9; padding: 0.5rem 0.75rem; border-radius: 4px;">
+          <span style="color: #2e7d32;">🎫 Booking Fee (Paid):</span>
+          <span style="font-weight: 600; color: #2e7d32;">- ${formatCurrency(bookingFee)}</span>
         </div>
+        ` : ''}
 
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; background: #e8f5e9; padding: 1rem; border-radius: 0.25rem; border-left: 4px solid #2e7d32;">
-          <span style="color: #2e7d32; font-weight: 700; font-size: 1.1rem;">💰 Total Amount:</span>
-          <span style="font-weight: 700; color: #2e7d32; font-size: 1.2rem;">${formatCurrency(totalAmount)}</span>
+        <div style="display: flex; justify-content: space-between; background: #e8f5e9; padding: 0.75rem; border-radius: 4px; border-left: 3px solid #2e7d32;">
+          <span style="color: #2e7d32; font-weight: 700;">💰 Total Amount:</span>
+          <span style="font-weight: 700; color: #2e7d32; font-size: 1.1rem;">${formatCurrency(totalAmount)}</span>
         </div>
       </div>
 
-      <div style="margin-top: 1.5rem; text-align: center;">
-        <button class="btn btn-primary" onclick="closeModal()" style="width: 100%;">Close</button>
-      </div>
+      <button class="btn btn-primary" onclick="closeModal()" style="width: 100%; margin-top: 1rem;">Close</button>
     </div>
   `;
 
@@ -1590,7 +2037,7 @@ async function openCustomerSpendingDetailsModal() {
   }
 
   // Filter confirmed and completed bookings
-  const spendingBookings = bookings.filter(b => b.status === 'confirmed' || b.status === 'completed');
+  const spendingBookings = bookings.filter(b => normalizeStatus(b.status) === 'confirmed' || normalizeStatus(b.status) === 'completed');
 
   if (spendingBookings.length === 0) {
     showModal(`
@@ -1606,19 +2053,16 @@ async function openCustomerSpendingDetailsModal() {
   let totalSpent = 0;
   let totalPackages = 0;
   let totalAddOns = 0;
-  let totalServices = 0;
 
   const bookingDetails = spendingBookings.map(booking => {
     const cost = booking.cost || {};
     const packagePrice = cost.packagePrice || 0;
     const addOnsTotal = booking.addOns?.reduce((sum, addon) => sum + (addon.price || 0), 0) || 0;
-    const servicesTotal = cost.services?.reduce((sum, service) => sum + (service.price || 0), 0) || 0;
-    const totalPrice = booking.totalPrice || (packagePrice + addOnsTotal + servicesTotal);
+    const totalPrice = booking.totalPrice || (packagePrice + addOnsTotal);
 
     totalSpent += totalPrice;
     totalPackages += packagePrice;
     totalAddOns += addOnsTotal;
-    totalServices += servicesTotal;
 
     return {
       id: typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id,
@@ -1626,7 +2070,6 @@ async function openCustomerSpendingDetailsModal() {
       package: booking.packageName,
       packagePrice,
       addOnsTotal,
-      servicesTotal,
       totalPrice,
       date: booking.date,
       time: booking.time,
@@ -1644,48 +2087,44 @@ async function openCustomerSpendingDetailsModal() {
           <div style="color: #2e7d32; font-size: 0.9rem; font-weight: 600;">Total Spent</div>
           <div style="color: #2e7d32; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalSpent)}</div>
         </div>
-        <div style="background: #e3f2fd; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #1976d2;">
-          <div style="color: #1565c0; font-size: 0.9rem; font-weight: 600;">Packages</div>
-          <div style="color: #1565c0; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalPackages)}</div>
+        <div style="background: var(--gray-100); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--gray-900);">
+          <div style="color: var(--gray-900); font-size: 0.9rem; font-weight: 600;">Packages</div>
+          <div style="color: var(--gray-900); font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalPackages)}</div>
         </div>
-        <div style="background: #fff3e0; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f57c00;">
-          <div style="color: #e65100; font-size: 0.9rem; font-weight: 600;">Add-ons</div>
-          <div style="color: #e65100; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalAddOns)}</div>
-        </div>
-        <div style="background: #f3e5f5; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #7b1fa2;">
-          <div style="color: #6a1b9a; font-size: 0.9rem; font-weight: 600;">Services</div>
-          <div style="color: #6a1b9a; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalServices)}</div>
+        <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--gray-700);">
+          <div style="color: var(--gray-700); font-size: 0.9rem; font-weight: 600;">Add-ons</div>
+          <div style="color: var(--gray-700); font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalAddOns)}</div>
         </div>
       </div>
 
-      <!-- Detailed Table -->
-      <div style="border-top: 2px solid var(--gray-200); padding-top: 1.5rem; margin-bottom: 1.5rem;">
+      <!-- Detailed Table with Black & White Striped Theme -->
+      <div style="border-top: 2px solid var(--gray-900); padding-top: 1.5rem; margin-bottom: 1.5rem;">
         <h3 style="margin-bottom: 1rem; color: var(--gray-900);">Booking Breakdown</h3>
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
             <thead>
-              <tr style="background: var(--gray-100); border-bottom: 2px solid var(--gray-300);">
+              <tr style="background: var(--gray-900); color: white;">
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Receipt</th>
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Pet</th>
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Package</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Package</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Add-ons</th>
-                <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Services</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${bookingDetails.map(b => `
-                <tr style="border-bottom: 1px solid var(--gray-200);">
-                  <td style="padding: 0.75rem; font-weight: 600; color: #2e7d32;">${escapeHtml(b.id)}</td>
+              ${bookingDetails.map((b, idx) => {
+                const rowBg = idx % 2 === 0 ? 'background: white;' : 'background: var(--gray-100);';
+                return `
+                <tr style="${rowBg} border-bottom: 1px solid var(--gray-300);">
+                  <td style="padding: 0.75rem; font-weight: 600; color: var(--gray-900);">${escapeHtml(b.id)}</td>
                   <td style="padding: 0.75rem;">${escapeHtml(b.pet)}</td>
                   <td style="padding: 0.75rem;">${escapeHtml(b.package)}</td>
                   <td style="padding: 0.75rem; text-align: right;">${formatCurrency(b.packagePrice)}</td>
                   <td style="padding: 0.75rem; text-align: right; color: #f57c00; font-weight: 600;">${formatCurrency(b.addOnsTotal)}</td>
-                  <td style="padding: 0.75rem; text-align: right;">${formatCurrency(b.servicesTotal)}</td>
                   <td style="padding: 0.75rem; text-align: right; font-weight: 700; color: #2e7d32;">${formatCurrency(b.totalPrice)}</td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         </div>
@@ -1699,5 +2138,456 @@ async function openCustomerSpendingDetailsModal() {
 
   showModal(modalContent);
 }
-window.openCus
-tomerSpendingDetailsModal = openCustomerSpendingDetailsModal;
+window.openCustomerSpendingDetailsModal = openCustomerSpendingDetailsModal;
+
+// ============================================
+// CUSTOMER PROFILE MANAGEMENT
+// ============================================
+
+// Load customer profile data
+async function loadCustomerProfile() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      customAlert.warning('Not Logged In', 'Please log in to manage your profile.');
+      return;
+    }
+
+    // Load profile data from user account and saved profile
+    const profileForm = document.getElementById('customerProfileForm');
+    const petForm = document.getElementById('customerPetForm');
+    
+    if (profileForm) {
+      // Fill personal information
+      document.getElementById('profileName').value = user.name || '';
+      document.getElementById('profileEmail').value = user.email || '';
+      document.getElementById('profilePhone').value = user.phone || '';
+      document.getElementById('profileAddress').value = user.address || '';
+    }
+
+    // Load saved pet profile if exists
+    try {
+      const savedProfile = await getCustomerProfile(user.id);
+      if (savedProfile && petForm) {
+        document.getElementById('defaultPetName').value = savedProfile.petName || '';
+        document.getElementById('defaultPetType').value = savedProfile.petType || '';
+        document.getElementById('defaultPetBreed').value = savedProfile.breed || '';
+        document.getElementById('defaultPetAge').value = savedProfile.age || '';
+        document.getElementById('defaultMedicalNotes').value = savedProfile.medical || '';
+        
+        // Set weight radio button
+        if (savedProfile.weight) {
+          const weightRadio = document.querySelector(`input[name="defaultPetWeight"][value="${savedProfile.weight}"]`);
+          if (weightRadio) weightRadio.checked = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load pet profile:', e);
+    }
+
+    // Load account statistics
+    await loadProfileStats(user.id);
+
+    // Setup form event listeners
+    setupProfileFormListeners();
+
+  } catch (error) {
+    console.error('Error loading customer profile:', error);
+    customAlert.error('Loading Error', 'Could not load profile data. Please try again.');
+  }
+}
+
+// Setup profile form event listeners
+function setupProfileFormListeners() {
+  const profileForm = document.getElementById('customerProfileForm');
+  const petForm = document.getElementById('customerPetForm');
+
+  if (profileForm) {
+    profileForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await updateCustomerProfile();
+    });
+  }
+
+  if (petForm) {
+    petForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await updatePetProfile();
+    });
+  }
+}
+
+// Update customer profile
+async function updateCustomerProfile() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      customAlert.warning('Not Logged In', 'Please log in to update your profile.');
+      return;
+    }
+
+    const name = document.getElementById('profileName').value.trim();
+    const phone = document.getElementById('profilePhone').value.trim();
+    const address = document.getElementById('profileAddress').value.trim();
+
+    if (!name) {
+      customAlert.warning('Missing Information', 'Please enter your full name.');
+      return;
+    }
+
+    // Validate phone number if provided
+    if (phone) {
+      const cleanPhone = phone.replace(/\s/g, '');
+      if (!/^(\+63|0)[0-9]{10}$/.test(cleanPhone)) {
+        customAlert.warning('Invalid Phone', 'Please enter a valid 11-digit phone number.');
+        return;
+      }
+    }
+
+    // Update user profile
+    const updatedUser = {
+      ...user,
+      name: name,
+      phone: phone,
+      address: address
+    };
+
+    // Save updated profile
+    if (typeof updateUserProfile === 'function') {
+      await updateUserProfile(updatedUser);
+    } else {
+      // Fallback: update localStorage
+      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+    }
+
+    customAlert.success('Profile Updated', 'Your personal information has been updated successfully.');
+    
+    // Update welcome name in dashboard
+    const welcomeName = document.getElementById('welcomeName');
+    if (welcomeName) {
+      welcomeName.textContent = name;
+    }
+
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    customAlert.error('Update Failed', 'Could not update your profile. Please try again.');
+  }
+}
+
+// Update pet profile
+async function updatePetProfile() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      customAlert.warning('Not Logged In', 'Please log in to update your pet profile.');
+      return;
+    }
+
+    const petName = document.getElementById('defaultPetName').value.trim();
+    const petType = document.getElementById('defaultPetType').value;
+    const petBreed = document.getElementById('defaultPetBreed').value.trim();
+    const petAge = document.getElementById('defaultPetAge').value;
+    const medicalNotes = document.getElementById('defaultMedicalNotes').value.trim();
+    const petWeight = document.querySelector('input[name="defaultPetWeight"]:checked')?.value || '';
+
+    const petProfile = {
+      petName: petName,
+      petType: petType,
+      breed: petBreed,
+      age: petAge,
+      weight: petWeight,
+      medical: medicalNotes,
+      ownerName: user.name || '',
+      contactNumber: user.phone || '',
+      address: user.address || ''
+    };
+
+    // Save pet profile
+    await saveCustomerProfile(user.id, petProfile);
+
+    customAlert.success('Pet Profile Saved', 'Your default pet information has been saved for faster booking.');
+
+  } catch (error) {
+    console.error('Error updating pet profile:', error);
+    customAlert.error('Update Failed', 'Could not save your pet profile. Please try again.');
+  }
+}
+
+// Load profile statistics
+async function loadProfileStats(userId) {
+  try {
+    const user = await getCurrentUser();
+    const bookings = await getUserBookings();
+    const userBookings = bookings.filter(b => b.userId === userId);
+    
+    const totalBookings = userBookings.length;
+    const completedBookings = userBookings.filter(b => b.status === 'completed').length;
+    const totalSpent = userBookings
+      .filter(b => b.status === 'completed')
+      .reduce((sum, b) => {
+        const cost = b.cost || {};
+        return sum + (cost.totalAmount || b.totalPrice || 0);
+      }, 0);
+    
+    const favoritePackage = getFavoritePackage(userBookings);
+    const memberSince = user?.createdAt ? new Date(user.createdAt).getFullYear() : new Date().getFullYear();
+
+    const statsContainer = document.getElementById('profileStats');
+    if (statsContainer) {
+      statsContainer.innerHTML = `
+        <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 8px; border-left: 4px solid #2e7d32;">
+          <div style="font-size: 2rem; font-weight: 700; color: #2e7d32; margin-bottom: 0.5rem;">${totalBookings}</div>
+          <div style="color: #2e7d32; font-weight: 600;">Total Bookings</div>
+        </div>
+        <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 8px; border-left: 4px solid #1976d2;">
+          <div style="font-size: 2rem; font-weight: 700; color: #1976d2; margin-bottom: 0.5rem;">${completedBookings}</div>
+          <div style="color: #1976d2; font-weight: 600;">Completed Sessions</div>
+        </div>
+        <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 8px; border-left: 4px solid #f57c00;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #f57c00; margin-bottom: 0.5rem;">${formatCurrency(totalSpent)}</div>
+          <div style="color: #f57c00; font-weight: 600;">Total Spent</div>
+        </div>
+        <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #f3e5f5, #e1bee7); border-radius: 8px; border-left: 4px solid #8e24aa;">
+          <div style="font-size: 1.2rem; font-weight: 700; color: #8e24aa; margin-bottom: 0.5rem;">${favoritePackage}</div>
+          <div style="color: #8e24aa; font-weight: 600;">Favorite Package</div>
+        </div>
+        <div style="text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #fce4ec, #f8bbd9); border-radius: 8px; border-left: 4px solid #c2185b;">
+          <div style="font-size: 2rem; font-weight: 700; color: #c2185b; margin-bottom: 0.5rem;">${memberSince}</div>
+          <div style="color: #c2185b; font-weight: 600;">Member Since</div>
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error('Error loading profile stats:', error);
+  }
+}
+
+// Get favorite package from booking history
+function getFavoritePackage(bookings) {
+  if (!bookings.length) return 'None yet';
+  
+  const packageCounts = {};
+  bookings.forEach(booking => {
+    const packageName = booking.packageName || 'Unknown';
+    packageCounts[packageName] = (packageCounts[packageName] || 0) + 1;
+  });
+  
+  let maxCount = 0;
+  let favoritePackage = 'None yet';
+  
+  Object.entries(packageCounts).forEach(([packageName, count]) => {
+    if (count > maxCount) {
+      maxCount = count;
+      favoritePackage = packageName;
+    }
+  });
+  
+  return favoritePackage;
+}
+
+// Export functions
+window.loadCustomerProfile = loadCustomerProfile;
+window.updateCustomerProfile = updateCustomerProfile;
+window.updatePetProfile = updatePetProfile;
+// Load account statistics for calendar view
+async function loadCalendarViewStats() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return;
+
+    const bookings = await getUserBookings();
+    const userBookings = bookings.filter(b => b.userId === user.id);
+    
+    const totalBookings = userBookings.length;
+    const completedBookings = userBookings.filter(b => b.status === 'completed').length;
+    const pendingBookings = userBookings.filter(b => b.status === 'pending').length;
+    const confirmedBookings = userBookings.filter(b => b.status === 'confirmed' || b.status === 'inProgress').length;
+    
+    const totalSpent = userBookings
+      .filter(b => b.status === 'completed')
+      .reduce((sum, b) => {
+        const cost = b.cost || {};
+        return sum + (cost.totalAmount || b.totalPrice || 0);
+      }, 0);
+    
+    const favoritePackage = getFavoritePackage(userBookings);
+
+    const statsContainer = document.getElementById('calendarViewStats');
+    if (statsContainer) {
+      statsContainer.innerHTML = `
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 6px; border-left: 3px solid #2e7d32;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #2e7d32; margin-bottom: 0.25rem;">${totalBookings}</div>
+          <div style="color: #2e7d32; font-weight: 600; font-size: 0.85rem;">Total Bookings</div>
+        </div>
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #fff3e0, #ffe0b2); border-radius: 6px; border-left: 3px solid #f57c00;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #f57c00; margin-bottom: 0.25rem;">${pendingBookings}</div>
+          <div style="color: #f57c00; font-weight: 600; font-size: 0.85rem;">Pending</div>
+        </div>
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #e3f2fd, #bbdefb); border-radius: 6px; border-left: 3px solid #1976d2;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #1976d2; margin-bottom: 0.25rem;">${confirmedBookings}</div>
+          <div style="color: #1976d2; font-weight: 600; font-size: 0.85rem;">Confirmed</div>
+        </div>
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #e8f5e9, #c8e6c9); border-radius: 6px; border-left: 3px solid #388e3c;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #388e3c; margin-bottom: 0.25rem;">${completedBookings}</div>
+          <div style="color: #388e3c; font-weight: 600; font-size: 0.85rem;">Completed</div>
+        </div>
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #f3e5f5, #e1bee7); border-radius: 6px; border-left: 3px solid #8e24aa;">
+          <div style="font-size: 1.1rem; font-weight: 700; color: #8e24aa; margin-bottom: 0.25rem;">${formatCurrency(totalSpent)}</div>
+          <div style="color: #8e24aa; font-weight: 600; font-size: 0.85rem;">Total Spent</div>
+        </div>
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #fce4ec, #f8bbd9); border-radius: 6px; border-left: 3px solid #c2185b;">
+          <div style="font-size: 0.9rem; font-weight: 700; color: #c2185b; margin-bottom: 0.25rem;">${favoritePackage}</div>
+          <div style="color: #c2185b; font-weight: 600; font-size: 0.85rem;">Favorite Package</div>
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error('Error loading calendar view stats:', error);
+  }
+}
+
+// Export the new function
+window.loadCalendarViewStats = loadCalendarViewStats;
+// Admin-style customer calendar - exact match to admin booking calendar
+async function renderSimpleCustomerCalendar(customerBookings = []) {
+  const container = document.getElementById('customerCalendar');
+  if (!container) return;
+
+  const currentDate = new Date();
+  const currentMonth = customerCalendarMonth;
+  const currentYear = customerCalendarYear;
+
+  // Group customer bookings by date
+  const customerBookingsByDate = {};
+  customerBookings.forEach(booking => {
+    if (booking.date) {
+      if (!customerBookingsByDate[booking.date]) {
+        customerBookingsByDate[booking.date] = [];
+      }
+      customerBookingsByDate[booking.date].push(booking);
+    }
+  });
+
+  // Generate calendar HTML - EXACT Admin style match
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+
+  // Get today's date in ISO format for comparison
+  const todayISO = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+
+  let calendarHTML = `
+    <div class="mega-calendar-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <button class="btn btn-outline btn-sm" onclick="changeCustomerCalendarMonth(-1)">← Prev</button>
+      <h3 style="margin:0;">${monthNames[currentMonth]} ${currentYear}</h3>
+      <button class="btn btn-outline btn-sm" onclick="changeCustomerCalendarMonth(1)">Next →</button>
+    </div>
+    <div class="calendar-grid" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:0.5rem;">
+      ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<div style="text-align:center; font-weight:bold; color:var(--gray-500); font-size:0.85rem; padding:0.5rem;">${d}</div>`).join('')}
+  `;
+
+  // Get first day of month and number of days
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+
+  // Add empty cells for days before month starts
+  for (let i = 0; i < firstDay; i++) {
+    calendarHTML += `<div style="background:transparent;"></div>`;
+  }
+
+  // Add days of the month - EXACT admin style
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayBookings = customerBookingsByDate[dateStr] || [];
+    const isToday = dateStr === todayISO;
+    
+    // Admin-style colors
+    let borderColor = 'var(--gray-200)';
+    if (dayBookings.length >= 3) borderColor = '#ff9800'; // busy day
+    if (isToday) borderColor = 'var(--primary-color)';
+    
+    calendarHTML += `
+      <div style="background:var(--white); border:1px solid ${borderColor}; border-radius:var(--radius-sm); padding:0.5rem; min-height:80px; cursor:pointer; position:relative; transition:all 0.2s;">
+        <div style="font-weight:600; color:var(--gray-900); display:flex; justify-content:space-between;">
+          <span>${day}</span>
+        </div>
+        
+        <div style="margin-top:0.25rem;">
+          ${dayBookings.slice(0, 3).map(booking => {
+            let dotColor = '#4caf50'; // confirmed - green
+            if (booking.status === 'pending') dotColor = '#ff9800'; // orange
+            if (booking.status === 'In Progress' || booking.status === 'inprogress') dotColor = '#2196f3'; // blue
+            if (booking.status === 'completed') dotColor = '#4caf50'; // green
+            if (['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes(booking.status)) dotColor = '#f44336'; // red
+            return `<div style="font-size:0.75rem; color:var(--gray-700); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;" onclick="openBookingDetailModal('${booking.id}')" title="${booking.petName} - ${booking.packageName || 'Custom'} (${booking.status})">
+              <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:${dotColor}; margin-right:4px;"></span>
+              ${booking.time} ${booking.petName}
+            </div>`;
+          }).join('')}
+          ${dayBookings.length > 3 ? `<div style="font-size:0.75rem; color:var(--gray-500); text-align:center;">+${dayBookings.length - 3} more</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  calendarHTML += `</div>`;
+  container.innerHTML = calendarHTML;
+}
+
+// Get admin-style dot color based on booking status
+function getAdminStyleDotColor(status) {
+  const normalizedStatus = (status || '').toLowerCase();
+  switch (normalizedStatus) {
+    case 'completed': return '#4caf50';  // Green
+    case 'confirmed': return '#2196f3';  // Blue
+    case 'inprogress': case 'in progress': return '#2196f3';  // Blue
+    case 'pending': return '#ff9800';    // Orange/Yellow
+    case 'cancelled': case 'cancelledbycustomer': case 'cancelledbyadmin': return '#f44336';  // Red
+    default: return '#9e9e9e';  // Gray
+  }
+}
+
+
+
+// Get booking status color
+function getBookingStatusColor(status) {
+  const normalizedStatus = (status || '').toLowerCase();
+  switch (normalizedStatus) {
+    case 'completed': return '#4caf50';
+    case 'confirmed': return '#2196f3';
+    case 'inprogress': case 'in progress': return '#2196f3';
+    case 'pending': return '#ff9800';
+    case 'cancelled': case 'cancelledbycustomer': case 'cancelledbyadmin': return '#f44336';
+    default: return '#9e9e9e';
+  }
+}
+
+// Calendar month navigation (placeholder)
+let customerCalendarMonth = new Date().getMonth();
+let customerCalendarYear = new Date().getFullYear();
+
+async function changeCustomerCalendarMonth(direction) {
+  customerCalendarMonth += direction;
+  if (customerCalendarMonth < 0) {
+    customerCalendarMonth = 11;
+    customerCalendarYear--;
+  } else if (customerCalendarMonth > 11) {
+    customerCalendarMonth = 0;
+    customerCalendarYear++;
+  }
+  
+  // Re-render calendar with new month
+  try {
+    const user = await getCurrentUser();
+    if (user) {
+      const allBookings = await getBookings();
+      const customerBookings = allBookings.filter(b => b.userId === user.id);
+      await renderSimpleCustomerCalendar(customerBookings);
+    }
+  } catch (e) {
+    console.error('Error changing calendar month:', e);
+  }
+}
+
+// Export functions
+window.renderSimpleCustomerCalendar = renderSimpleCustomerCalendar;
+window.changeCustomerCalendarMonth = changeCustomerCalendarMonth;

@@ -160,7 +160,8 @@ function extractPreferredCut(notes) {
 
 /**
  * Generate price breakdown HTML for admin view
- * Uses unified system: Total Amount = Subtotal - Booking Fee (MINUS!)
+ * For PENDING bookings: Show only Total Amount (no Package/Subtotal breakdown since no add-ons yet)
+ * For CONFIRMED/IN PROGRESS/COMPLETED: Show full breakdown with Package, Add-ons, Subtotal
  * 
  * @param {Object} booking - Booking object
  * @param {Object} pkg - Package object (optional)
@@ -187,8 +188,15 @@ function generatePriceBreakdown(booking, pkg = null) {
   // Get booking fee
   const bookingFee = booking.cost?.bookingFee || 0;
 
-  // Total Amount = Subtotal - Booking Fee (MINUS, not plus!)
-  const totalAmount = Math.max(0, subtotal - bookingFee);
+  // Check if status allows add-ons (confirmed, in progress) - show full breakdown
+  const statusLower = (booking.status || '').toLowerCase();
+  const canAddAddons = ['confirmed', 'in progress', 'inprogress'].includes(statusLower);
+  const isPaidStatus = ['confirmed', 'completed', 'in progress', 'inprogress'].includes(statusLower);
+  
+  // Total Amount calculation:
+  // - For PENDING: Show full subtotal (customer hasn't paid booking fee yet)
+  // - For CONFIRMED/IN PROGRESS/COMPLETED: Show subtotal minus booking fee (already paid)
+  const totalAmount = isPaidStatus ? Math.max(0, subtotal - bookingFee) : subtotal;
 
   // Build add-ons list HTML
   let addOnsListHtml = '';
@@ -200,7 +208,21 @@ function generatePriceBreakdown(booking, pkg = null) {
     ).join('');
   }
 
-  // Generate breakdown HTML
+  // For PENDING status: Show only Total Amount (simplified view)
+  if (!canAddAddons && statusLower === 'pending') {
+    return `
+      <div class="price-breakdown" style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-sm); margin: 1rem 0; border: 1px solid var(--gray-200);">
+        <h4 style="margin-top: 0; margin-bottom: 0.75rem; color: var(--gray-900);">Price Breakdown</h4>
+        
+        <div style="display: flex; justify-content: space-between; padding: 0.75rem 1rem; margin: 0 -1rem -1rem -1rem; background: #e8f5e9; border-radius: 0 0 var(--radius-sm) var(--radius-sm);">
+          <span style="font-weight: 700; color: #2e7d32; font-size: 1.05rem;">Total Amount</span>
+          <span style="font-weight: 700; color: #2e7d32; font-size: 1.1rem;">${formatCurrency(totalAmount)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // For CONFIRMED/IN PROGRESS/COMPLETED: Show full breakdown with Package, Add-ons, Subtotal
   let html = `
     <div class="price-breakdown" style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-sm); margin: 1rem 0; border: 1px solid var(--gray-200);">
       <h4 style="margin-top: 0; margin-bottom: 0.75rem; color: var(--gray-900);">Price Breakdown</h4>
@@ -221,12 +243,11 @@ function generatePriceBreakdown(booking, pkg = null) {
       ` : ''}
       
       <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 2px solid var(--gray-400); font-weight: 600;">
-        <span>Subtotal</span>
-        <span>${formatCurrency(subtotal)}</span>
+       
       </div>
       
-      ${bookingFee > 0 ? `
-        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300); color: var(--danger, #dc3545);">
+      ${isPaidStatus && bookingFee > 0 ? `
+        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300); color: #2e7d32;">
           <span style="font-weight: 500;">Booking Fee (Paid)</span>
           <span style="font-weight: 600;">- ${formatCurrency(bookingFee)}</span>
         </div>
@@ -315,7 +336,6 @@ function switchView(view) {
   document.getElementById('calendarView').style.display = 'none';
   document.getElementById('customersView').style.display = 'none';
   document.getElementById('groomerAbsencesView').style.display = 'none';
-  document.getElementById('walkInView').style.display = 'none';
   document.getElementById('galleryView').style.display = 'none';
   const addonsView = document.getElementById('addonsView');
   if (addonsView) addonsView.style.display = 'none';
@@ -372,10 +392,6 @@ function switchView(view) {
     case 'groomerAbsences':
       document.getElementById('groomerAbsencesView').style.display = 'block';
       loadGroomerAbsencesView();
-      break;
-    case 'walkIn':
-      document.getElementById('walkInView').style.display = 'block';
-      loadWalkInForm();
       break;
     case 'history':
       document.getElementById('historyView').style.display = 'block';
@@ -1367,7 +1383,7 @@ function updateCalendarBlockStatus(date) {
 // Load customer management
 async function loadCustomerManagement() {
   const users = await getUsers();
-  const customers = users.filter(u => u.role === 'customer' && !u.id.includes('walk-in'));
+  const customers = users.filter(u => u.role === 'customer');
   const bookings = await getBookings();
 
   // Add booking count to each customer
@@ -3283,6 +3299,10 @@ async function cancelBooking(bookingId, note = '', skipPrompt = false) {
   const booking = bookings.find(b => b.id === bookingId);
 
   if (booking) {
+    // Track previous status before cancelling (for history filtering)
+    booking.previousStatus = booking.status;
+    booking.wasConfirmed = booking.status === 'confirmed' || booking.status === 'inProgress';
+    
     booking.status = 'cancelledByAdmin';
     booking.cancellationNote = note || 'Cancelled by admin';
     await saveBookings(bookings);
@@ -3482,727 +3502,6 @@ async function toggleFeature(bookingId) {
   }
 }
 
-// Walk-in booking state
-let walkInBookingData = {
-  step: 1,
-  petType: null,
-  packageId: null,
-  groomerId: null,
-  date: null,
-  time: null,
-  customerName: '',
-  phone: '',
-  petName: '',
-  vaccination: '',
-  weight: '',
-  singleServices: [],
-  addOns: []
-};
-
-// Load walk-in appointment form
-function loadWalkInForm() {
-  walkInBookingData = {
-    step: 1,
-    petType: null,
-    packageId: null,
-    groomerId: null,
-    date: null,
-    time: null,
-    customerName: '',
-    phone: '',
-    petName: '',
-    vaccination: '',
-    weight: ''
-  };
-
-  // Setup pet type selection
-  document.querySelectorAll('.pet-type-card').forEach(card => {
-    card.addEventListener('click', function () {
-      const petType = this.dataset.petType;
-      walkInBookingData.petType = petType;
-      document.querySelectorAll('.pet-type-card').forEach(c => c.classList.remove('selected'));
-      this.classList.add('selected');
-      setTimeout(() => walkInNextStep(), 300);
-    });
-  });
-
-  // Setup navigation buttons
-  const prevBtn = document.getElementById('walkInPrevBtn');
-  const nextBtn = document.getElementById('walkInNextBtn');
-  const submitBtn = document.getElementById('walkInSubmitBtn');
-
-  if (prevBtn) prevBtn.addEventListener('click', walkInPrevStep);
-  if (nextBtn) nextBtn.addEventListener('click', walkInNextStep);
-  if (submitBtn) submitBtn.addEventListener('click', handleWalkInSubmit);
-
-  // Setup form submission
-  const form = document.getElementById('walkInForm');
-  if (form) {
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      walkInNextStep();
-    });
-  }
-
-  updateWalkInStep(1);
-  updateWalkInSummary();
-}
-
-function updateWalkInStep(step) {
-  walkInBookingData.step = step;
-
-  // Update step indicators
-  document.querySelectorAll('.booking-steps .step').forEach((s, i) => {
-    const stepNum = parseInt(s.dataset.step);
-    s.classList.toggle('active', stepNum === step);
-    s.classList.toggle('completed', stepNum < step);
-  });
-
-  // Show/hide step content
-  for (let i = 1; i <= 5; i++) {
-    const stepContent = document.getElementById(`walkInStep${i}`);
-    if (stepContent) {
-      stepContent.style.display = i === step ? 'block' : 'none';
-    }
-  }
-
-  // Show/hide navigation buttons
-  const prevBtn = document.getElementById('walkInPrevBtn');
-  const nextBtn = document.getElementById('walkInNextBtn');
-  const submitBtn = document.getElementById('walkInSubmitBtn');
-
-  if (prevBtn) prevBtn.style.display = step > 1 ? 'block' : 'none';
-  if (nextBtn) nextBtn.style.display = step < 5 ? 'block' : 'none';
-  if (submitBtn) submitBtn.style.display = step === 5 ? 'block' : 'none';
-
-  // Load step-specific content asynchronously
-  if (step === 2) loadWalkInPackages().catch(e => console.warn('loadWalkInPackages failed:', e));
-  if (step === 3) loadWalkInGroomers();
-  if (step === 4) loadWalkInCustomerForm();
-  if (step === 5) loadWalkInReview().catch(e => console.warn('loadWalkInReview failed:', e));
-
-  updateWalkInSummary().catch(e => console.warn('updateWalkInSummary failed:', e));
-}
-
-function walkInNextStep() {
-  if (walkInBookingData.step === 1 && !walkInBookingData.petType) {
-    alert('Please select a pet type');
-    return;
-  }
-  if (walkInBookingData.step === 2 && !walkInBookingData.packageId) {
-    alert('Please select a package');
-    return;
-  }
-  if (walkInBookingData.step === 3) {
-    if (!walkInBookingData.groomerId || !walkInBookingData.date || !walkInBookingData.time) {
-      alert('Please select a groomer, date, and time');
-      return;
-    }
-    if (typeof isCalendarBlackout === 'function' && isCalendarBlackout(walkInBookingData.date)) {
-      alert('Selected date is closed. Please choose another date.');
-      return;
-    }
-  }
-  if (walkInBookingData.step === 4) {
-    const name = document.getElementById('walkInName')?.value.trim();
-    const phone = document.getElementById('walkInPhone')?.value.trim();
-    const petName = document.getElementById('walkInPetName')?.value.trim();
-    const vaccination = document.querySelector('input[name="walkInVaccination"]:checked')?.value;
-    const weight = document.getElementById('walkInWeight')?.value;
-
-    if (!name || !phone || !petName || !vaccination || !weight) {
-      alert('Please complete all customer information fields');
-      return;
-    }
-
-    if (!validatePhoneNumber(phone)) {
-      alert('Please enter a valid 11-digit phone number (starting with 0 or +63)');
-      return;
-    }
-
-    walkInBookingData.customerName = name;
-    walkInBookingData.phone = phone;
-    walkInBookingData.petName = petName;
-    walkInBookingData.vaccination = vaccination;
-    walkInBookingData.weight = weight;
-  }
-
-  if (walkInBookingData.step < 5) {
-    updateWalkInStep(walkInBookingData.step + 1);
-  }
-}
-
-function walkInPrevStep() {
-  if (walkInBookingData.step > 1) {
-    updateWalkInStep(walkInBookingData.step - 1);
-  }
-}
-
-async function loadWalkInPackages() {
-  const container = document.getElementById('walkInPackagesContainer');
-  if (!container) return;
-
-  const packagesRaw = await getPackages().catch(() => []);
-  const packagesList = Array.isArray(packagesRaw) ? packagesRaw : (packagesRaw ? Object.values(packagesRaw) : []);
-
-  const packages = packagesList.filter(pkg => {
-    if (pkg.type === 'addon') return false;
-    if (pkg.type === 'any') return true;
-    return pkg.type === walkInBookingData.petType;
-  });
-
-  container.innerHTML = packages.map(pkg => {
-    const minPrice = pkg.tiers && pkg.tiers.length > 0 ? pkg.tiers[0].price : 0;
-    const isSelected = walkInBookingData.packageId === pkg.id;
-    return `
-      <div class="package-card card card-selectable ${isSelected ? 'selected' : ''}" 
-           data-package-id="${pkg.id}" 
-           style="cursor: pointer; padding: 1.5rem;">
-        <h3 style="margin-bottom: 0.5rem;">${escapeHtml(pkg.name)}</h3>
-        <p style="color: var(--gray-600); margin-bottom: 1rem;">${escapeHtml(pkg.description || '')}</p>
-        <div style="font-size: 1.5rem; font-weight: 700; color: var(--purple);">₱${minPrice}</div>
-      </div>
-    `;
-  }).join('');
-
-  container.querySelectorAll('.package-card').forEach(card => {
-    card.addEventListener('click', function () {
-      walkInBookingData.packageId = this.dataset.packageId;
-      document.querySelectorAll('.package-card').forEach(c => c.classList.remove('selected'));
-      this.classList.add('selected');
-      updateWalkInSummary();
-    });
-  });
-}
-
-function loadWalkInGroomers() {
-  const container = document.getElementById('walkInGroomersContainer');
-  if (!container) return;
-
-  const groomers = getGroomers();
-  container.innerHTML = `
-    <div class="groomer-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-      ${groomers.map(g => {
-    const isSelected = walkInBookingData.groomerId === g.id;
-    return `
-          <div class="groomer-card card card-selectable ${isSelected ? 'selected' : ''}" 
-               data-groomer-id="${g.id}" 
-               style="cursor: pointer; padding: 1.5rem; text-align: center;">
-            <div style="font-size: 3rem; margin-bottom: 0.5rem;">${g.avatar || '👨‍⚕️'}</div>
-            <h4>${escapeHtml(g.name)}</h4>
-          </div>
-        `;
-  }).join('')}
-    </div>
-  `;
-
-  container.querySelectorAll('.groomer-card').forEach(card => {
-    card.addEventListener('click', function () {
-      walkInBookingData.groomerId = this.dataset.groomerId;
-      document.querySelectorAll('.groomer-card').forEach(c => c.classList.remove('selected'));
-      this.classList.add('selected');
-      setupWalkInCalendarTimePicker(walkInBookingData.groomerId);
-      updateWalkInSummary();
-    });
-  });
-
-  if (walkInBookingData.groomerId) {
-    setupWalkInCalendarTimePicker(walkInBookingData.groomerId);
-  }
-}
-
-function loadWalkInCustomerForm() {
-  // Form is already in HTML, just populate if needed
-  if (walkInBookingData.customerName) {
-    const nameInput = document.getElementById('walkInName');
-    if (nameInput) nameInput.value = walkInBookingData.customerName;
-  }
-  if (walkInBookingData.phone) {
-    const phoneInput = document.getElementById('walkInPhone');
-    if (phoneInput) phoneInput.value = walkInBookingData.phone;
-  }
-  if (walkInBookingData.petName) {
-    const petNameInput = document.getElementById('walkInPetName');
-    if (petNameInput) petNameInput.value = walkInBookingData.petName;
-  }
-  if (walkInBookingData.vaccination) {
-    const vaccinationInput = document.querySelector(`input[name="walkInVaccination"][value="${walkInBookingData.vaccination}"]`);
-    if (vaccinationInput) vaccinationInput.checked = true;
-  }
-  if (walkInBookingData.weight) {
-    const weightInput = document.getElementById('walkInWeight');
-    if (weightInput) weightInput.value = walkInBookingData.weight;
-  }
-
-  // Setup weight change listener
-  const weightInput = document.getElementById('walkInWeight');
-  if (weightInput) {
-    weightInput.addEventListener('change', function () {
-      walkInBookingData.weight = this.value;
-      updateWalkInSummary();
-    });
-  }
-
-  // Setup single service checkboxes
-  const nailCheckbox = document.getElementById('walkInNail');
-  if (nailCheckbox) {
-    nailCheckbox.checked = walkInBookingData.singleServices.includes('nail');
-    nailCheckbox.addEventListener('change', function () {
-      if (this.checked) {
-        if (!walkInBookingData.singleServices.includes('nail')) {
-          walkInBookingData.singleServices.push('nail');
-        }
-      } else {
-        walkInBookingData.singleServices = walkInBookingData.singleServices.filter(id => id !== 'nail');
-      }
-      updateWalkInSummary();
-    });
-  }
-
-  const earCheckbox = document.getElementById('walkInEar');
-  if (earCheckbox) {
-    earCheckbox.checked = walkInBookingData.singleServices.includes('ear');
-    earCheckbox.addEventListener('change', function () {
-      if (this.checked) {
-        if (!walkInBookingData.singleServices.includes('ear')) {
-          walkInBookingData.singleServices.push('ear');
-        }
-      } else {
-        walkInBookingData.singleServices = walkInBookingData.singleServices.filter(id => id !== 'ear');
-      }
-      updateWalkInSummary();
-    });
-  }
-
-  // Setup add-on checkboxes
-  const toothbrushCheckbox = document.getElementById('walkInToothbrush');
-  if (toothbrushCheckbox) {
-    toothbrushCheckbox.checked = walkInBookingData.addOns.includes('toothbrush');
-    toothbrushCheckbox.addEventListener('change', function () {
-      if (this.checked) {
-        if (!walkInBookingData.addOns.includes('toothbrush')) {
-          walkInBookingData.addOns.push('toothbrush');
-        }
-      } else {
-        walkInBookingData.addOns = walkInBookingData.addOns.filter(key => key !== 'toothbrush');
-      }
-      updateWalkInSummary();
-    });
-  }
-
-  const demattingCheckbox = document.getElementById('walkInDematting');
-  if (demattingCheckbox) {
-    demattingCheckbox.checked = walkInBookingData.addOns.includes('dematting');
-    demattingCheckbox.addEventListener('change', function () {
-      if (this.checked) {
-        if (!walkInBookingData.addOns.includes('dematting')) {
-          walkInBookingData.addOns.push('dematting');
-        }
-      } else {
-        walkInBookingData.addOns = walkInBookingData.addOns.filter(key => key !== 'dematting');
-      }
-      updateWalkInSummary();
-    });
-  }
-}
-
-async function loadWalkInReview() {
-  const container = document.getElementById('walkInReviewContainer');
-  if (!container) return;
-
-  const packagesRaw = await getPackages().catch(() => []);
-  const groomersRaw = await getGroomers().catch(() => []);
-  const packagesList = Array.isArray(packagesRaw) ? packagesRaw : (packagesRaw ? Object.values(packagesRaw) : []);
-  const groomersList = Array.isArray(groomersRaw) ? groomersRaw : (groomersRaw ? Object.values(groomersRaw) : []);
-
-  const selectedPackage = packagesList.find(p => p.id === walkInBookingData.packageId);
-  const selectedGroomer = groomersList.find(g => g.id === walkInBookingData.groomerId);
-
-  container.innerHTML = `
-    <div class="card">
-      <div class="card-body">
-        <h4 style="margin-bottom: 1rem;">Customer Information</h4>
-        <p><strong>Name:</strong> ${escapeHtml(walkInBookingData.customerName)}</p>
-        <p><strong>Phone:</strong> ${escapeHtml(walkInBookingData.phone)}</p>
-        <p><strong>Pet Name:</strong> ${escapeHtml(walkInBookingData.petName)}</p>
-        <p><strong>Pet Type:</strong> ${walkInBookingData.petType === 'dog' ? 'Dog' : 'Cat'}</p>
-        <p><strong>Weight:</strong> ${escapeHtml(walkInBookingData.weight)}</p>
-        <p><strong>Vaccination:</strong> ${walkInBookingData.vaccination === 'up-to-date' ? 'Up to date' : 'Not up to date'}</p>
-        
-        <h4 style="margin-top: 2rem; margin-bottom: 1rem;">Appointment Details</h4>
-        <p><strong>Package:</strong> ${selectedPackage ? escapeHtml(selectedPackage.name) : ''}</p>
-        <p><strong>Groomer:</strong> ${selectedGroomer ? escapeHtml(selectedGroomer.name) : ''}</p>
-        <p><strong>Date:</strong> ${formatDate(walkInBookingData.date)}</p>
-        <p><strong>Time:</strong> ${walkInBookingData.time}</p>
-      </div>
-    </div>
-  `;
-}
-
-async function updateWalkInSummary() {
-  const container = document.getElementById('walkInSummaryContainer');
-  if (!container) return;
-
-  const packagesRaw = await getPackages().catch(() => []);
-  const groomersRaw = await getGroomers().catch(() => []);
-  const packagesList = Array.isArray(packagesRaw) ? packagesRaw : (packagesRaw ? Object.values(packagesRaw) : []);
-  const groomersList = Array.isArray(groomersRaw) ? groomersRaw : (groomersRaw ? Object.values(groomersRaw) : []);
-  const selectedPackage = packagesList.find(p => p.id === walkInBookingData.packageId);
-  const selectedGroomer = groomersList.find(g => g.id === walkInBookingData.groomerId);
-
-  let summaryHTML = '<h3 style="margin-bottom: 1rem;">Booking Summary</h3>';
-
-  if (walkInBookingData.customerName) {
-    summaryHTML += `
-      <div style="margin-bottom: 1rem;">
-        <strong>Owner:</strong> ${escapeHtml(walkInBookingData.customerName)}<br>
-        <strong>Contact:</strong> ${escapeHtml(walkInBookingData.phone)}<br>
-        <strong>Pet:</strong> ${escapeHtml(walkInBookingData.petName || 'Not set')}
-      </div>
-    `;
-  } else {
-    summaryHTML += '<p style="color: var(--gray-600);">Complete the steps to see booking summary</p>';
-  }
-
-  if (selectedPackage) {
-    summaryHTML += `<div style="margin-bottom: 1rem;"><strong>Package:</strong> ${escapeHtml(selectedPackage.name)}</div>`;
-  }
-
-  if (selectedGroomer) {
-    summaryHTML += `<div style="margin-bottom: 1rem;"><strong>Groomer:</strong> ${escapeHtml(selectedGroomer.name)}</div>`;
-  }
-
-  if (walkInBookingData.date) {
-    summaryHTML += `<div style="margin-bottom: 1rem;"><strong>Date:</strong> ${formatDate(walkInBookingData.date)}</div>`;
-  }
-
-  if (walkInBookingData.time) {
-    summaryHTML += `<div style="margin-bottom: 1rem;"><strong>Time:</strong> ${walkInBookingData.time}</div>`;
-  }
-
-  // Calculate prices if weight is selected
-  if (walkInBookingData.weight && walkInBookingData.packageId) {
-    const costEstimate = computeBookingCost(
-      walkInBookingData.packageId,
-      walkInBookingData.weight,
-      walkInBookingData.addOns,
-      walkInBookingData.singleServices
-    );
-
-    if (costEstimate) {
-      summaryHTML += `<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">`;
-
-      if (walkInBookingData.packageId === 'single-service' && costEstimate.services?.length) {
-        summaryHTML += `
-          <div style="margin-bottom: 0.5rem;">
-            <strong>Single Services:</strong><br>
-            ${costEstimate.services.map(service => `${escapeHtml(service.label)} (${formatCurrency(service.price || 0)})`).join('<br>')}
-          </div>
-        `;
-      }
-
-      summaryHTML += `
-        <div style="margin-bottom: 0.5rem;"><strong>Package (${escapeHtml(costEstimate.weightLabel)}):</strong> ${formatCurrency(costEstimate.packagePrice)}</div>
-        <div style="margin-bottom: 0.5rem;"><strong>Add-ons:</strong> ${costEstimate.addOns.length ? costEstimate.addOns.map(addon => `${escapeHtml(addon.label)} (${formatCurrency(addon.price)})`).join(', ') : 'None'}</div>
-        <div style="margin-bottom: 0.5rem;"><strong>Subtotal:</strong> ${formatCurrency(costEstimate.subtotal)}</div>
-        ${walkInBookingData.status === 'pending' ? `
-          <div style="margin-bottom: 0.5rem;"><strong>Booking Fee (must pay to approve):</strong> ${formatCurrency(costEstimate.bookingFee)}</div>
-          <div style="margin-bottom: 0.5rem;"><strong>Balance on Visit:</strong> ${formatCurrency(costEstimate.balanceOnVisit)}</div>
-        ` : ''}
-        <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--gray-200); font-weight: 600;">
-          <strong>Total Amount:</strong> ${formatCurrency(costEstimate.totalAmount || costEstimate.subtotal)}
-        </div>
-      `;
-      summaryHTML += `</div>`;
-    } else if (walkInBookingData.status === 'pending') {
-      summaryHTML += `<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);"><strong>Booking Fee:</strong> ₱100 · Must pay to approve</div>`;
-    }
-  } else if (walkInBookingData.packageId && walkInBookingData.status === 'pending') {
-    summaryHTML += `<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);"><strong>Booking Fee:</strong> ₱100 · Must pay to approve</div>`;
-  }
-
-  container.innerHTML = summaryHTML;
-}
-
-function setupWalkInCalendarTimePicker(groomerId) {
-  const container = document.getElementById('walkInCalendarTimePicker');
-  if (!container) return;
-
-  walkInBookingData.groomerId = groomerId;
-  const state = { monthOffset: 0, selectedDate: walkInBookingData.date, selectedTime: walkInBookingData.time, groomerId };
-  container.__pickerState = state;
-
-  renderWalkInCalendarTimePicker();
-}
-
-function renderWalkInCalendarTimePicker() {
-  const container = document.getElementById('walkInCalendarTimePicker');
-  if (!container) return;
-
-  const state = container.__pickerState || { monthOffset: 0, selectedDate: null, selectedTime: null, groomerId: null };
-  if (!state.groomerId) {
-    container.innerHTML = '<p style="color: var(--gray-600); text-align: center; padding: 2rem;">Please select a groomer first</p>';
-    return;
-  }
-
-  const baseDate = new Date();
-  const displayDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + state.monthOffset, 1);
-  const monthName = displayDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-
-  const firstDayOfMonth = new Date(displayDate.getFullYear(), displayDate.getMonth(), 1);
-  const lastDayOfMonth = new Date(displayDate.getFullYear(), displayDate.getMonth() + 1, 0);
-  const startWeekday = firstDayOfMonth.getDay();
-
-  const days = [];
-  for (let i = 0; i < startWeekday; i++) {
-    days.push(null);
-  }
-  for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
-    const date = new Date(displayDate.getFullYear(), displayDate.getMonth(), day);
-    const iso = toLocalISO(date);
-    days.push({ day, iso });
-  }
-
-  while (days.length % 7 !== 0) {
-    days.push(null);
-  }
-
-  const weeks = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
-  }
-
-  const timeSlots = ['9am-12pm', '12pm-3pm', '3pm-6pm'];
-  const selectedDate = state.selectedDate;
-  const selectedTime = state.selectedTime;
-
-  container.innerHTML = `
-    <div class="mega-calendar" style="margin-bottom: 1.5rem;">
-      <div class="calendar-header">
-        <button class="calendar-nav" data-cal-action="prev">←</button>
-        <h3>${monthName}</h3>
-        <button class="calendar-nav" data-cal-action="next">→</button>
-      </div>
-      <div class="calendar-grid calendar-grid-head">
-        ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<div class="calendar-cell head">${d}</div>`).join('')}
-      </div>
-      <div class="calendar-grid calendar-grid-body">
-        ${weeks.map(week => week.map(day => {
-    if (!day) {
-      return '<div class="calendar-cell empty"></div>';
-    }
-    const blackout = typeof getCalendarBlackout === 'function' ? getCalendarBlackout(day.iso) : null;
-    const isPast = isPastDate(day.iso);
-    const isClosed = !!blackout;
-    const isSelected = selectedDate === day.iso;
-    return `
-            <div class="calendar-cell day ${isSelected ? 'selected' : ''} ${isPast ? 'past' : ''} ${isClosed ? 'blackout' : ''}" 
-                 data-date="${day.iso}" 
-                 style="cursor: ${(isPast || isClosed) ? 'not-allowed' : 'pointer'}; ${isClosed ? 'background-color: var(--gray-300); color: var(--gray-500);' : ''} opacity: ${(isPast || isClosed) ? '0.5' : '1'};">
-              <span class="day-number">${day.day}</span>
-            </div>
-          `;
-  }).join('')).join('')}
-      </div>
-    </div>
-    ${selectedDate ? (() => {
-      const blackout = typeof getCalendarBlackout === 'function' ? getCalendarBlackout(selectedDate) : null;
-      if (blackout) {
-        return `<p style="color: var(--gray-600); text-align: center; padding: 1.5rem;">${escapeHtml(blackout.reason || 'Closed')} · choose another day.</p>`;
-      }
-      return `
-        <div class="time-slots-picker">
-          <h4 style="margin-bottom: 1rem;">Select Time</h4>
-          <div class="time-slots">
-            ${timeSlots.map(time => {
-        const isBooked = !groomerSlotAvailable(state.groomerId, selectedDate, time);
-        const isSelected = selectedTime === time;
-        return `
-                <button type="button" 
-                        class="time-slot ${isSelected ? 'selected' : ''}" 
-                        data-time="${time}"
-                        ${isBooked ? 'disabled' : ''}
-                        style="cursor: ${isBooked ? 'not-allowed' : 'pointer'}">
-                  ${time}
-                </button>
-              `;
-      }).join('')}
-          </div>
-        </div>
-      `;
-    })() : '<p style="color: var(--gray-600); text-align: center; padding: 2rem;">Select a date to choose time</p>'}
-  `;
-
-  // Attach event listeners
-  container.querySelectorAll('.calendar-cell.day:not(.past):not(.blackout)').forEach(cell => {
-    cell.addEventListener('click', function () {
-      const date = this.dataset.date;
-      state.selectedDate = date;
-      walkInBookingData.date = date;
-      renderWalkInCalendarTimePicker();
-      updateWalkInSummary();
-    });
-  });
-
-  container.querySelectorAll('.time-slot:not(:disabled)').forEach(slot => {
-    slot.addEventListener('click', function () {
-      const time = this.dataset.time;
-      state.selectedTime = time;
-      walkInBookingData.time = time;
-      renderWalkInCalendarTimePicker();
-      updateWalkInSummary();
-    });
-  });
-
-  const prevBtn = container.querySelector('[data-cal-action="prev"]');
-  const nextBtn = container.querySelector('[data-cal-action="next"]');
-  if (prevBtn) {
-    prevBtn.addEventListener('click', () => {
-      state.monthOffset -= 1;
-      renderWalkInCalendarTimePicker();
-    });
-  }
-  if (nextBtn) {
-    nextBtn.addEventListener('click', () => {
-      state.monthOffset += 1;
-      renderWalkInCalendarTimePicker();
-    });
-  }
-}
-
-// Handle walk-in booking submission
-async function handleWalkInSubmit() {
-  try {
-    // Validate all fields
-    const name = document.getElementById('walkInName')?.value.trim();
-    const phone = document.getElementById('walkInPhone')?.value.trim();
-    const petName = document.getElementById('walkInPetName')?.value.trim();
-    const vaccination = document.querySelector('input[name="walkInVaccination"]:checked')?.value;
-    const weight = document.getElementById('walkInWeight')?.value;
-
-    if (!name || !phone || !petName || !vaccination || !weight) {
-      customAlert.warning('Please complete all customer information fields');
-      return;
-    }
-
-    if (!validatePhoneNumber(phone)) {
-      customAlert.warning('Please enter a valid 11-digit phone number (starting with 0 or +63)');
-      return;
-    }
-
-    if (!walkInBookingData.petType || !walkInBookingData.packageId || !walkInBookingData.groomerId || !walkInBookingData.date || !walkInBookingData.time) {
-      customAlert.warning('Please complete all booking steps');
-      return;
-    }
-    if (typeof isCalendarBlackout === 'function' && isCalendarBlackout(walkInBookingData.date)) {
-      customAlert.warning('This date is closed for bookings. Please pick another day.');
-      return;
-    }
-
-    const packagesRaw = await getPackages().catch(() => []);
-    const groomersRaw = await getGroomers().catch(() => []);
-    const packagesList = Array.isArray(packagesRaw) ? packagesRaw : (packagesRaw ? Object.values(packagesRaw) : []);
-    const groomersList = Array.isArray(groomersRaw) ? groomersRaw : (groomersRaw ? Object.values(groomersRaw) : []);
-    const selectedPackage = packagesList.find(p => p.id === walkInBookingData.packageId);
-    const selectedGroomer = groomersList.find(g => g.id === walkInBookingData.groomerId);
-
-    if (!selectedPackage || !selectedGroomer) {
-      customAlert.error('Invalid package or groomer selection');
-      return;
-    }
-
-    // Create walk-in customer user ID
-    const walkInUserId = 'walk-in-' + Date.now();
-
-    // Create booking object
-    const booking = {
-      id: generateId(),
-      shortId: typeof generateBookingCode === 'function' ? generateBookingCode() : undefined,
-      userId: walkInUserId,
-      petName: petName,
-      petType: walkInBookingData.petType,
-      packageName: selectedPackage.name,
-      packageId: walkInBookingData.packageId,
-      date: walkInBookingData.date,
-      time: walkInBookingData.time,
-      phone: phone,
-      customerName: name,
-      groomerId: walkInBookingData.groomerId,
-      groomerName: selectedGroomer.name,
-      addOns: [],
-      bookingNotes: '',
-      profile: {
-        ownerName: name,
-        contactNumber: phone,
-        address: '',
-        petName: petName,
-        breed: '',
-        age: '',
-        weight: weight,
-        medical: '',
-        vaccinations: '',
-        vaccinationStatus: vaccination
-      },
-      beforeImage: '',
-      afterImage: '',
-      cancellationNote: '',
-      status: 'pending',
-      createdAt: Date.now(),
-      isWalkIn: true
-    };
-
-    // Save booking
-    const bookings = await getBookings();
-    bookings.push(booking);
-    await saveBookings(bookings);
-
-    logBookingHistory({
-      bookingId: booking.id,
-      action: 'Created',
-      message: `Walk-in booking: ${name} booked ${selectedPackage.name} with ${selectedGroomer.name} on ${formatDate(booking.date)} at ${formatTime(booking.time)}`,
-      actor: 'Admin'
-    });
-
-    customAlert.success('Walk-in booking created successfully! It will appear in Pending Bookings.');
-
-    // Reset form
-    walkInBookingData = {
-      step: 1,
-      petType: null,
-      packageId: null,
-      groomerId: null,
-      date: null,
-      time: null,
-      customerName: '',
-      phone: '',
-      petName: '',
-      vaccination: '',
-      weight: ''
-    };
-
-    // Clear form fields
-    document.getElementById('walkInName').value = '';
-    document.getElementById('walkInPhone').value = '';
-    document.getElementById('walkInPetName').value = '';
-    document.querySelectorAll('input[name="walkInVaccination"]').forEach(r => r.checked = false);
-    document.getElementById('walkInWeight').value = '';
-
-    // Reload pending bookings view
-    if (typeof switchView === 'function') {
-      switchView('pending');
-    }
-    if (typeof loadPendingBookings === 'function') {
-      await loadPendingBookings();
-    }
-
-    // Reset to step 1
-    updateWalkInStep(1);
-  } catch (error) {
-    console.error('Error creating walk-in booking:', error);
-    customAlert.error('Failed to create walk-in booking. Please try again.');
-  }
-}
-
 function setupAdminPasswordForm() {
   const form = document.getElementById('adminPasswordForm');
   if (!form || form.dataset.bound === 'true') return;
@@ -4236,7 +3535,6 @@ function setupAdminPasswordForm() {
 }
 
 // Make functions globally available
-window.handleWalkInSubmit = handleWalkInSubmit;
 window.extractPreferredCut = extractPreferredCut;
 window.diagnoseBookingNotes = diagnoseBookingNotes;
 
@@ -5570,11 +4868,12 @@ window.openAddonsModal = async function (bookingId) {
   const contentElement = document.createElement('div');
   
   // Display booking fee info at the top
+  const isPaidStatus = ['confirmed', 'completed', 'inProgress'].includes(booking.status);
   const bookingFeeDisplay = bookingFee > 0 ? `
-    <div style="background:#e8f5e9;padding:1rem;border-radius:10px;margin-bottom:1.5rem;border-left:4px solid #2e7d32;">
+    <div style="background:${isPaidStatus ? '#e8f5e9' : '#fff3e0'};padding:1rem;border-radius:10px;margin-bottom:1.5rem;border-left:4px solid ${isPaidStatus ? '#2e7d32' : '#ff9800'};">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-weight:600;color:#2e7d32;">Booking Fee (Paid)</span>
-        <span style="font-size:1.1rem;font-weight:700;color:#2e7d32;">- ${formatCurrency(bookingFee)}</span>
+        <span style="font-weight:600;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">Booking Fee ${isPaidStatus ? '(Paid)' : '(To Pay)'}</span>
+        <span style="font-size:1.1rem;font-weight:700;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">- ${formatCurrency(bookingFee)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #c8e6c9;">
         <span style="font-weight:600;color:#111827;">Base Price</span>
@@ -5723,12 +5022,27 @@ window.openSimpleBookingView = async function (bookingId) {
 
 // ==================== BOOKING HISTORY ====================
 
-// Load and display booking history (completed, cancelled, no-show)
+// Load and display booking history (completed, cancelled confirmed bookings, no-show)
 window.loadBookingHistory = async function () {
   const bookings = await getBookings();
-  const historyBookings = bookings.filter(b =>
-    b.status === 'completed' || b.status === 'cancelled' || b.status === 'no-show'
-  );
+  const historyBookings = bookings.filter(b => {
+    const status = (b.status || '').toLowerCase();
+    const isCancelled = status === 'cancelled' || status === 'cancelledbycustomer' || status === 'cancelledbyadmin';
+    
+    // Include completed bookings
+    if (status === 'completed') return true;
+    
+    // Include no-show bookings
+    if (status === 'no-show') return true;
+    
+    // Include cancelled bookings ONLY if they were confirmed or inProgress before cancellation
+    // Don't record pending bookings that were cancelled (waste of data)
+    if (isCancelled && (b.previousStatus === 'confirmed' || b.previousStatus === 'inProgress' || b.wasConfirmed)) {
+      return true;
+    }
+    
+    return false;
+  });
 
   renderBookingHistoryTable(historyBookings);
 };
@@ -5761,9 +5075,11 @@ window.renderBookingHistoryTable = function (bookings) {
   `;
 
   bookings.forEach(booking => {
+    const statusLower = (booking.status || '').toLowerCase();
+    const isCancelled = statusLower === 'cancelled' || statusLower === 'cancelledbycustomer' || statusLower === 'cancelledbyadmin';
     const statusClass = booking.status === 'completed' ? 'badge-completed' :
-      booking.status === 'cancelled' ? 'badge-cancelled' : 'badge-noshow';
-    const statusText = booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('-', ' ');
+      isCancelled ? 'badge-cancelled' : 'badge-noshow';
+    const statusText = isCancelled ? 'Cancelled' : (booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('-', ' '));
     const totalPrice = booking.totalPrice || booking.cost?.subtotal || 0;
     const priceButton = totalPrice > 0
       ? `<button class="btn btn-sm" style="background: #2e7d32; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 0.25rem; cursor: pointer; font-weight: 600;" onclick="openPricingBreakdownModal('${booking.id}')">${formatCurrency(totalPrice)}</button>`
@@ -6132,9 +5448,9 @@ async function openPricingBreakdownModal(bookingId) {
           <span style="font-weight: 700; color: var(--gray-900); font-size: 1.1rem;">${formatCurrency(subtotal)}</span>
         </div>
 
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem; background: #fff3cd; padding: 0.75rem; border-radius: 0.25rem;">
-          <span style="color: var(--danger, #dc3545); font-weight: 500;">🎫 Booking Fee (Paid):</span>
-          <span style="font-weight: 600; color: var(--danger, #dc3545);">- ${formatCurrency(bookingFee)}</span>
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 1rem; background: ${['confirmed', 'completed', 'inProgress'].includes(booking.status) ? '#e8f5e9' : '#fff3cd'}; padding: 0.75rem; border-radius: 0.25rem;">
+          <span style="color: ${['confirmed', 'completed', 'inProgress'].includes(booking.status) ? '#2e7d32' : 'var(--danger, #dc3545)'}; font-weight: 500;">🎫 Booking Fee ${['confirmed', 'completed', 'inProgress'].includes(booking.status) ? '(Paid)' : '(To Pay)'}:</span>
+          <span style="font-weight: 600; color: ${['confirmed', 'completed', 'inProgress'].includes(booking.status) ? '#2e7d32' : 'var(--danger, #dc3545)'};">- ${formatCurrency(bookingFee)}</span>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; background: #e8f5e9; padding: 1rem; border-radius: 0.25rem; border-left: 4px solid #2e7d32;">
@@ -6182,31 +5498,28 @@ async function openRevenueDetailsModal() {
   let totalRevenue = 0;
   let totalPackages = 0;
   let totalAddOns = 0;
-  let totalServices = 0;
   let totalBookingFees = 0;
 
   const bookingDetails = revenueBookings.map(booking => {
     const cost = booking.cost || {};
     const packagePrice = parseFloat(cost.packagePrice) || 0;
     const addOnsTotal = (booking.addOns || []).reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
-    const servicesTotal = (cost.services || []).reduce((sum, service) => sum + (parseFloat(service.price) || 0), 0);
     const bookingFee = parseFloat(cost.bookingFee) || 100;
-    const totalPrice = parseFloat(booking.totalPrice) || (packagePrice + addOnsTotal + servicesTotal);
+    // Use cost.totalAmount if available, otherwise calculate from components
+    const totalPrice = parseFloat(cost.totalAmount) || parseFloat(booking.totalPrice) || (packagePrice + addOnsTotal);
 
     totalRevenue += totalPrice;
     totalPackages += packagePrice;
     totalAddOns += addOnsTotal;
-    totalServices += servicesTotal;
     totalBookingFees += bookingFee;
 
     return {
       id: typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id,
-      customer: booking.customerName,
-      pet: booking.petName,
-      package: booking.packageName,
+      customer: booking.ownerName || booking.customerName || '—',
+      pet: booking.petName || '—',
+      package: booking.packageName || '—',
       packagePrice,
       addOnsTotal,
-      servicesTotal,
       bookingFee,
       totalPrice,
       date: booking.date,
@@ -6224,58 +5537,42 @@ async function openRevenueDetailsModal() {
           <div style="color: #2e7d32; font-size: 0.9rem; font-weight: 600;">Total Revenue</div>
           <div style="color: #2e7d32; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalRevenue)}</div>
         </div>
-        <div style="background: #e3f2fd; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #1976d2;">
-          <div style="color: #1565c0; font-size: 0.9rem; font-weight: 600;">Packages</div>
-          <div style="color: #1565c0; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalPackages)}</div>
+        <div style="background: var(--gray-100); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--gray-900);">
+          <div style="color: var(--gray-900); font-size: 0.9rem; font-weight: 600;">Packages</div>
+          <div style="color: var(--gray-900); font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalPackages)}</div>
         </div>
-        <div style="background: #fff3e0; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f57c00;">
-          <div style="color: #e65100; font-size: 0.9rem; font-weight: 600;">Add-ons</div>
-          <div style="color: #e65100; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalAddOns)}</div>
+        <div style="background: var(--gray-50); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--gray-700);">
+          <div style="color: var(--gray-700); font-size: 0.9rem; font-weight: 600;">Add-ons</div>
+          <div style="color: var(--gray-700); font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalAddOns)}</div>
         </div>
-        <div style="background: #f3e5f5; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #7b1fa2;">
-          <div style="color: #6a1b9a; font-size: 0.9rem; font-weight: 600;">Services</div>
-          <div style="color: #6a1b9a; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalServices)}</div>
-        </div>
-        <div style="background: #fff3cd; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #dc3545;">
-          <div style="color: #dc3545; font-size: 0.9rem; font-weight: 600;">Booking Fees (Paid)</div>
-          <div style="color: #dc3545; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalBookingFees)}</div>
+        <div style="background: #e8f5e9; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #2e7d32;">
+          <div style="color: #2e7d32; font-size: 0.9rem; font-weight: 600;">Booking Fees (Collected)</div>
+          <div style="color: #2e7d32; font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem;">${formatCurrency(totalBookingFees)}</div>
         </div>
       </div>
 
-      <!-- Detailed Table -->
-      <div style="border-top: 2px solid var(--gray-200); padding-top: 1.5rem; margin-bottom: 1.5rem;">
+      <!-- Detailed Table with Black & White Striped Theme -->
+      <div style="border-top: 2px solid var(--gray-900); padding-top: 1.5rem; margin-bottom: 1.5rem;">
         <h3 style="margin-bottom: 1rem; color: var(--gray-900);">Booking Breakdown</h3>
         <div style="overflow-x: auto;">
           <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
             <thead>
-              <tr style="background: var(--gray-100); border-bottom: 2px solid var(--gray-300);">
+              <tr style="background: var(--gray-900); color: white;">
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Booking ID</th>
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Customer</th>
                 <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Pet</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Package</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Add-ons</th>
-                <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Services</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Subtotal</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Booking Fee</th>
                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Total</th>
               </tr>
             </thead>
             <tbody>
-              ${bookingDetails.map(b => {
-    const subtotal = b.packagePrice + b.addOnsTotal + b.servicesTotal;
-    return `
-                <tr style="border-bottom: 1px solid var(--gray-200);">
-                  <td style="padding: 0.75rem; font-weight: 600; color: #2e7d32;">${escapeHtml(b.id)}</td>
-                  <td style="padding: 0.75rem;">${escapeHtml(b.customer)}</td>
-                  <td style="padding: 0.75rem;">${escapeHtml(b.pet)}</td>
-                  <td style="padding: 0.75rem; text-align: right;">${formatCurrency(b.packagePrice)}</td>
-                  <td style="padding: 0.75rem; text-align: right; color: #f57c00; font-weight: 600;">${formatCurrency(b.addOnsTotal)}</td>
-                  <td style="padding: 0.75rem; text-align: right;">${formatCurrency(b.servicesTotal)}</td>
-                  <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${formatCurrency(subtotal)}</td>
-                  <td style="padding: 0.75rem; text-align: right; color: #dc3545; font-weight: 600;">- ${formatCurrency(b.bookingFee)}</td>
-                  <td style="padding: 0.75rem; text-align: right; font-weight: 700; color: #2e7d32;">${formatCurrency(b.totalPrice)}</td>
-                </tr>
-              `;
+              ${bookingDetails.map((b, idx) => {
+    const subtotal = b.packagePrice + b.addOnsTotal;
+    const rowBg = idx % 2 === 0 ? 'background: white;' : 'background: var(--gray-100);';
+    return `<tr style="${rowBg} border-bottom: 1px solid var(--gray-300);"><td style="padding: 0.75rem; font-weight: 600; color: var(--gray-900);">${escapeHtml(b.id)}</td><td style="padding: 0.75rem;">${escapeHtml(b.customer)}</td><td style="padding: 0.75rem;">${escapeHtml(b.pet)}</td><td style="padding: 0.75rem; text-align: right;">${formatCurrency(b.packagePrice)}</td><td style="padding: 0.75rem; text-align: right; color: #f57c00; font-weight: 600;">${formatCurrency(b.addOnsTotal)}</td><td style="padding: 0.75rem; text-align: right; font-weight: 600;">${formatCurrency(subtotal)}</td><td style="padding: 0.75rem; text-align: right; color: #dc3545; font-weight: 600;">-${formatCurrency(b.bookingFee)}</td><td style="padding: 0.75rem; text-align: right; font-weight: 700; color: #2e7d32;">${formatCurrency(b.totalPrice)}</td></tr>`;
   }).join('')}
             </tbody>
           </table>

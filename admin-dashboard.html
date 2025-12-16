@@ -128,7 +128,13 @@
               </a>
             </li>
             <li style="margin-bottom: 0.5rem;">
-              <a href="#" data-view="walkIn"
+              <a href="reviews.html"
+                style="display: block; padding: 0.75rem 1rem; border-radius: var(--radius-sm); transition: var(--transition); color: var(--gray-700); font-weight: 500; text-decoration: none;">
+                ⭐ Reviews (Before & After)
+              </a>
+            </li>
+            <li style="margin-bottom: 0.5rem;">
+              <a href="booking.html?source=admin"
                 style="display: block; padding: 0.75rem 1rem; border-radius: var(--radius-sm); transition: var(--transition); color: var(--gray-700); font-weight: 500; text-decoration: none;">
                 ➕ Walk-In Appointment
               </a>
@@ -332,172 +338,7 @@
             <div id="groomerAbsenceTable"></div>
           </div>
 
-          <!-- Walk-In Appointment Section -->
-          <div id="walkInView" style="display:none;">
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem;">
-              <button onclick="switchView('overview')" class="btn btn-outline"
-                style="background: transparent; border: 2px solid #000; color: #000;">← Back</button>
-              <h2 style="margin: 0; flex: 1; color: var(--gray-900);">➕ Create Walk-In Appointment</h2>
-            </div>
 
-            <!-- Booking Steps -->
-            <div class="booking-steps">
-              <div class="step active" data-step="1">
-                <div class="step-number">1</div>
-                <div class="step-label">Pet Type</div>
-              </div>
-              <div class="step" data-step="2">
-                <div class="step-number">2</div>
-                <div class="step-label">Package</div>
-              </div>
-              <div class="step" data-step="3">
-                <div class="step-number">3</div>
-                <div class="step-label">Groomer & Slots</div>
-              </div>
-              <div class="step" data-step="4">
-                <div class="step-number">4</div>
-                <div class="step-label">Customer Info</div>
-              </div>
-              <div class="step" data-step="5">
-                <div class="step-number">5</div>
-                <div class="step-label">Review</div>
-              </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 400px; gap: 2rem; margin-top: 2rem;"
-              class="walk-in-booking-layout">
-              <!-- Main Booking Form -->
-              <div class="walk-in-main-content">
-                <!-- Step 1: Pet Type -->
-                <div id="walkInStep1" class="booking-step-content">
-                  <h3 style="margin-bottom: 1.5rem;">Select Pet Type</h3>
-                  <div class="pet-type-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                    <div class="pet-type-card" data-pet-type="dog"
-                      style="cursor: pointer; padding: 2rem; background: var(--white); border: 2px solid var(--gray-200); border-radius: var(--radius); text-align: center; transition: var(--transition);">
-                      <div style="font-size: 4rem; margin-bottom: 1rem;">🐕</div>
-                      <h4 style="margin-bottom: 0.5rem;">Dog</h4>
-                      <p style="color: var(--gray-600); font-size: 0.9rem;">Grooming services for dogs</p>
-                    </div>
-                    <div class="pet-type-card" data-pet-type="cat"
-                      style="cursor: pointer; padding: 2rem; background: var(--white); border: 2px solid var(--gray-200); border-radius: var(--radius); text-align: center; transition: var(--transition);">
-                      <div style="font-size: 4rem; margin-bottom: 1rem;">🐈</div>
-                      <h4 style="margin-bottom: 0.5rem;">Cat</h4>
-                      <p style="color: var(--gray-600); font-size: 0.9rem;">Grooming services for cats</p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Step 2: Package -->
-                <div id="walkInStep2" class="booking-step-content" style="display: none;">
-                  <h3 style="margin-bottom: 1.5rem;">Select Package</h3>
-                  <div id="walkInPackagesContainer"></div>
-                </div>
-
-                <!-- Step 3: Groomer & Time -->
-                <div id="walkInStep3" class="booking-step-content" style="display: none;">
-                  <h3 style="margin-bottom: 1.5rem;">Select Groomer & Time</h3>
-                  <div id="walkInGroomersContainer" style="margin-bottom: 2rem;"></div>
-                  <div id="walkInCalendarTimePicker"></div>
-                </div>
-
-                <!-- Step 4: Customer Info -->
-                <div id="walkInStep4" class="booking-step-content" style="display: none;">
-                  <h3 style="margin-bottom: 1.5rem;">Customer Information</h3>
-                  <form id="walkInForm">
-                    <div class="form-group">
-                      <label for="walkInName" class="form-label">Customer Name</label>
-                      <input type="text" id="walkInName" class="form-input" placeholder="Enter customer name" required>
-                    </div>
-                    <div class="form-group">
-                      <label for="walkInPhone" class="form-label">Contact Number (11 digits)</label>
-                      <input type="tel" id="walkInPhone" class="form-input" placeholder="+63" required
-                        pattern="(\+63|0)[0-9]{10}" maxlength="13">
-                    </div>
-                    <div class="form-group">
-                      <label for="walkInPetName" class="form-label">Pet Name</label>
-                      <input type="text" id="walkInPetName" class="form-input" placeholder="Enter pet name" required>
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label">Vaccination Status</label>
-                      <div class="form-radio-group">
-                        <label class="radio-label">
-                          <input type="radio" name="walkInVaccination" value="up-to-date" required>
-                          <span>Up to date</span>
-                        </label>
-                        <label class="radio-label">
-                          <input type="radio" name="walkInVaccination" value="not-up-to-date" required>
-                          <span>Not up to date</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div class="form-group">
-                      <label for="walkInWeight" class="form-label">Pet Weight</label>
-                      <select id="walkInWeight" class="form-select" required>
-                        <option value="">Select weight range...</option>
-                        <option value="5kg & below">5kg & below</option>
-                        <option value="5.1 - 8kg">5.1 - 8kg</option>
-                        <option value="8.1 - 15kg">8.1 - 15kg</option>
-                        <option value="15.1 - 30kg">15.1 - 30kg</option>
-                        <option value="30kg & above">30kg & above</option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label">Single Services (Add-ons)</label>
-                      <div class="addon-grid" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                        <label class="addon-chip">
-                          <input type="checkbox" id="walkInNail" value="nail">
-                          <span>Nail Trim (+₱50-80)</span>
-                        </label>
-                        <label class="addon-chip">
-                          <input type="checkbox" id="walkInEar" value="ear">
-                          <span>Ear Clean (+₱70-90)</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label">Additional Add-ons</label>
-                      <div class="addon-grid" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                        <label class="addon-chip">
-                          <input type="checkbox" id="walkInToothbrush" value="toothbrush">
-                          <span>Toothbrush (+₱25)</span>
-                        </label>
-                        <label class="addon-chip">
-                          <input type="checkbox" id="walkInDematting" value="dematting">
-                          <span>De-matting (+₱80-250)</span>
-                        </label>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-
-                <!-- Step 5: Review -->
-                <div id="walkInStep5" class="booking-step-content" style="display: none;">
-                  <h3 style="margin-bottom: 1.5rem;">Review & Confirm</h3>
-                  <div id="walkInReviewContainer"></div>
-                </div>
-
-                <!-- Navigation Buttons -->
-                <div style="display: flex; justify-content: space-between; margin-top: 2rem;">
-                  <button id="walkInPrevBtn" class="btn btn-outline" style="display: none;">← Previous</button>
-                  <button id="walkInNextBtn" class="btn btn-primary" style="display: none;">Next →</button>
-                  <button id="walkInSubmitBtn" class="btn btn-primary" style="display: none;">Confirm Booking</button>
-                </div>
-
-                <!-- Price Summary (moved below buttons, no sticky) -->
-                <div class="card"
-                  style="margin-top: 2rem; background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem;">
-                  <h3 style="margin-bottom: 1rem;">Booking Summary</h3>
-                  <div id="walkInSummaryContainer">
-                    <p style="color: var(--gray-600);">Complete the steps to see booking summary</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sidebar Summary (hidden, summary moved to main content) -->
-              <div class="booking-sidebar walk-in-summary-sidebar" style="display: none;">
-              </div>
-            </div>
-          </div>
 
           <!-- Booking History Section -->
           <div id="historyView" style="display:none;">

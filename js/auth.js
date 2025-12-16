@@ -32,9 +32,9 @@ async function signup(event) {
     return;
   }
 
-  // Validate phone number - only numbers allowed
-  if (!/^\d+$/.test(phone)) {
-    customAlert.warning('Invalid Phone Number', 'Phone number must contain only numbers');
+  // Validate phone number - only numbers allowed, exactly 11 digits
+  if (!/^\d{11}$/.test(phone)) {
+    customAlert.warning('Invalid Phone Number', 'Phone number must be exactly 11 digits (numbers only)');
     return;
   }
 

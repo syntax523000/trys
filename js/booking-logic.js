@@ -75,7 +75,7 @@ function validatePetAge(age, packageId) {
 /**
  * Validate all required fields for a specific step
  * 
- * @param {number} step - Step number (1-4)
+ * @param {number} step - Step number (1-5)
  * @param {Object} state - Current booking state
  * @returns {Object} { valid: boolean, errors: string[] }
  */
@@ -84,14 +84,26 @@ function validateStep(step, state) {
   
   switch (step) {
     case 1:
-      // Step 1: Pet Type Selection
+      // Step 1: Policy Agreement - check DOM directly
+      if (typeof document !== 'undefined') {
+        const policyCheckbox = document.getElementById('agreeToPolicy');
+        if (!policyCheckbox || !policyCheckbox.checked) {
+          errors.push('Please read and agree to the policy');
+        }
+      } else if (!state.policyAgreed) {
+        errors.push('Please read and agree to the policy');
+      }
+      break;
+      
+    case 2:
+      // Step 2: Pet Type Selection
       if (!state.petType) {
         errors.push('Please select a pet type');
       }
       break;
       
-    case 2:
-      // Step 2: Package Selection
+    case 3:
+      // Step 3: Package Selection
       if (!state.packageId) {
         errors.push('Please select a package');
       }
@@ -100,8 +112,8 @@ function validateStep(step, state) {
       }
       break;
       
-    case 3:
-      // Step 3: Schedule (Date & Time)
+    case 4:
+      // Step 4: Schedule (Date & Time)
       if (!state.date) {
         errors.push('Please select a date');
       }
@@ -110,8 +122,8 @@ function validateStep(step, state) {
       }
       break;
       
-    case 4:
-      // Step 4: Owner Details & Confirmation
+    case 5:
+      // Step 5: Owner Details & Confirmation
       if (!state.ownerName || !state.ownerName.trim()) {
         errors.push('Please enter owner name');
       }
@@ -377,7 +389,7 @@ function canProgressToStep(currentStep, state) {
  * @returns {number} Next step number
  */
 function getNextStep(currentStep, state) {
-  if (currentStep >= 4) return 4; // Can't go past step 4
+  if (currentStep >= 5) return 5; // Can't go past step 5
   
   // Special case: if on step 1 and packageId already set, skip to step 3
   if (currentStep === 1 && state.packageId) {
@@ -405,7 +417,7 @@ function getPreviousStep(currentStep) {
  * @returns {boolean} True if valid step
  */
 function isValidStep(step) {
-  return step >= 1 && step <= 4;
+  return step >= 1 && step <= 5;
 }
 
 // ============================================

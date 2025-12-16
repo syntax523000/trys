@@ -325,11 +325,90 @@
 /* ============================================
    Public Calendar Styles
    ============================================ */
+
+/* Calendar Wrapper - Container for horizontal scroll */
+#calendarWrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
+}
+
+/* Show scrollbar for calendar wrapper */
+#calendarWrapper::-webkit-scrollbar {
+  height: 8px;
+}
+
+#calendarWrapper::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+#calendarWrapper::-webkit-scrollbar-thumb {
+  background: var(--gray-500);
+  border-radius: 4px;
+}
+
+#calendarWrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-700);
+}
+
+/* Calendar wrapper - enable horizontal scroll */
+#calendarWrapper,
+[id*="calendarWrapper"] {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
+  padding-bottom: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-500) var(--gray-100);
+}
+
+#calendarWrapper::-webkit-scrollbar,
+[id*="calendarWrapper"]::-webkit-scrollbar {
+  height: 8px;
+}
+
+#calendarWrapper::-webkit-scrollbar-track,
+[id*="calendarWrapper"]::-webkit-scrollbar-track {
+  background: var(--gray-100);
+  border-radius: 4px;
+}
+
+#calendarWrapper::-webkit-scrollbar-thumb,
+[id*="calendarWrapper"]::-webkit-scrollbar-thumb {
+  background: var(--gray-500);
+  border-radius: 4px;
+}
+
 .public-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 0.5rem;
   margin-bottom: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Mobile responsive - stretch to full width */
+@media (max-width: 768px) {
+  .public-calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 480px) {
+  .public-calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
+    width: 100%;
+    box-sizing: border-box;
+    gap: 0.4rem;
+  }
 }
 
 .public-calendar-day {
@@ -937,9 +1016,10 @@ tbody tr:hover {
 
 .time-slot.selected {
   border-color: var(--gray-900);
-  background: linear-gradient(135deg, rgba(18, 18, 18, 0.15), rgba(72, 72, 72, 0.15));
-  color: var(--gray-900);
+  background: var(--gray-900);
+  color: var(--white);
   font-weight: 600;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 .time-slot:disabled {

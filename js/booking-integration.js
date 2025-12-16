@@ -259,6 +259,12 @@ class BookingIntegration {
     document.querySelectorAll('.step-content').forEach((content, index) => {
       if (index + 1 === step) {
         content.classList.add('active');
+        // Add inline styles for horizontal scroll on mobile
+        content.style.overflowX = 'auto';
+        content.style.webkitOverflowScrolling = 'touch';
+        content.style.maxWidth = '100%';
+        content.style.width = '100%';
+        content.style.boxSizing = 'border-box';
       } else {
         content.classList.remove('active');
       }
@@ -282,11 +288,11 @@ class BookingIntegration {
     }
     
     if (nextBtn) {
-      nextBtn.style.display = currentStep < 4 ? 'inline-block' : 'none';
+      nextBtn.style.display = currentStep < 5 ? 'inline-block' : 'none';
     }
     
     if (submitBtn) {
-      submitBtn.style.display = currentStep === 4 ? 'inline-block' : 'none';
+      submitBtn.style.display = currentStep === 5 ? 'inline-block' : 'none';
     }
   }
   
@@ -310,8 +316,18 @@ class BookingIntegration {
     const nextBtn = document.getElementById('nextBtn');
     if (!nextBtn) return;
     
-    const validation = BookingLogic.validateStep(state.currentStep, state);
-    nextBtn.disabled = !validation.valid;
+    let isValid = false;
+    
+    // Special handling for step 1 - check checkbox directly
+    if (state.currentStep === 1) {
+      const policyCheckbox = document.getElementById('agreeToPolicy');
+      isValid = policyCheckbox && policyCheckbox.checked;
+    } else {
+      const validation = BookingLogic.validateStep(state.currentStep, state);
+      isValid = validation.valid;
+    }
+    
+    nextBtn.disabled = !isValid;
   }
   
   /**

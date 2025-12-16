@@ -58,18 +58,22 @@
       <div class="booking-steps">
         <div class="step active">
           <div class="step-number">1</div>
-          <div class="step-label">Pet Type</div>
+          <div class="step-label">Policy</div>
         </div>
         <div class="step">
           <div class="step-number">2</div>
-          <div class="step-label">Package</div>
+          <div class="step-label">Pet Type</div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
-          <div class="step-label">Schedule</div>
+          <div class="step-label">Package</div>
         </div>
         <div class="step">
           <div class="step-number">4</div>
+          <div class="step-label">Schedule</div>
+        </div>
+        <div class="step">
+          <div class="step-number">5</div>
           <div class="step-label">Details</div>
         </div>
       </div>
@@ -78,8 +82,57 @@
         <div class="booking-layout">
           <!-- Main Content -->
           <div>
-            <!-- Step 1: Pet Type -->
+            <!-- Step 0: Policy Agreement -->
             <div class="step-content active">
+              <div class="card">
+                <div class="card-header">
+                  <h2 class="card-title">📋 Read Our Policy & Rules</h2>
+                  <p style="color: var(--gray-600); margin-top: 0.5rem;">Please scroll through and read our policy before booking. You must agree to continue.</p>
+                </div>
+                <div class="card-body">
+                  <div class="policy-scroll-container" id="policyScrollContainer">
+                    <div class="policy-content">
+                      <h3>Waiver, Agreement and Release Form</h3>
+                      
+                      <h4>a. Health</h4>
+                      <p>All pets must be in good health. By signing this form, the owner or authorized representative certifies that their pet is in good health and has been free from any condition that could jeopardize the health or well-being of other guests. During your pet's stay, if it is detected that he or she has fleas or ticks, treatment will be applied and charged to you.</p>
+                      
+                      <h4>b. Fees</h4>
+                      <p>Fees are due and payable at the end of each grooming appointment.</p>
+                      <p><strong>Important:</strong> No refunds for missed bookings. Rescheduling requires a new booking. Need to lift a ban? Visit the store with your receipt or email <strong>BestBuddies@gmail.com</strong></p>
+                      
+                      <h4>c. Appointments</h4>
+                      <p>Appointments are required. Dogs without appointments cannot be guaranteed a grooming time slot. No refund in case of failure to come on the appointment time and date.</p>
+                      
+                      <h4>d. Responsibility</h4>
+                      <p>BestBuddies Pet Shop will not be held responsible for any sickness and injury caused by the pet to itself during grooming.</p>
+                      <p>BestBuddies Pet Shop will not be held responsible for clipper burn and/or nicks resulting from grooming of matted, neglected coats or for irritation caused by removing coat from pets possessing mild to severe skin allergy, nor will we be held responsible for stressful effects grooming may have upon any dog/cat, especially those older in age.</p>
+                      <p>BestBuddies Pet Shop reserves the right to charge additional fees for services we consider over and above the norm covered by our standard rates. We also reserve the right to refuse service to customers whose pet may pose a threat to us or to the other pets left in our care, whether it is due to aggression, a health problem or a parasite problem.</p>
+                      <p>I agree to be responsible for any property damages caused by my pet.</p>
+                      <p>I understand that my pet, my guests, or I may be videotaped or photographed and that the images become the property of BestBuddies Pet Shop.</p>
+                      <p>I agree that I have read and understand the rules and conditions of BestBuddies Pet Shop's grooming services. I agree to release, hold harmless, acquit, indemnify and forever discharge the business and its proprietor and employees from all, and in all manner of action and actions, suits, damages, judgments, executions, claims, and demands whatsoever, in law or equity, which may arise from the grooming of my pet at BestBuddies Pet Shop.</p>
+                      
+                      <div class="policy-end-marker">
+                        <p>— End of Policy —</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="policy-agreement-section" id="policyAgreementSection">
+                    <div class="scroll-indicator" id="scrollIndicator">
+                      <span>⬇️ Scroll down to read the full policy</span>
+                    </div>
+                    <label class="policy-checkbox-label" id="policyCheckboxLabel">
+                      <input type="checkbox" id="agreeToPolicy" disabled>
+                      <span>I have read and agree to BestBuddies Pet Shop's rules and regulations</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 1: Pet Type -->
+            <div class="step-content">
               <div class="card">
                 <div class="card-header">
                   <h2 class="card-title">Select Pet Type</h2>
@@ -318,8 +371,8 @@
                           placeholder="Preferred cut, special reminders"></textarea>
                       </div>
 
-                      <!-- Grooming Cuts Reference -->
-                      <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-200);">
+                      <!-- Grooming Cuts Reference - Only shown for Face Trim single service -->
+                      <div id="referenceCutsSection" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--gray-200);">
                         <p style="font-size: 0.85rem; color: var(--gray-600); margin-bottom: 1rem; font-weight: 500;">💡
                           Not sure what cut you want? Browse popular styles below:</p>
                         <div class="cuts-carousel-wrapper">
@@ -413,10 +466,14 @@
                         </div>
                       </div>
                     </div>
-                    <label class="toggle-chip">
-                      <input type="checkbox" id="saveProfileToggle" checked>
-                      <span>Save these details for faster booking next time</span>
-                    </label>
+                    <!-- Save Profile Toggle - visible only for logged in users -->
+                    <div id="saveProfileSection" style="display: none; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--gray-200);">
+                      <label class="toggle-chip" style="display: flex; align-items: center; gap: 0.75rem; cursor: pointer;">
+                        <input type="checkbox" id="saveProfileToggle" checked>
+                        <span>💾 Save these details for faster booking next time</span>
+                      </label>
+                      <p style="font-size: 0.8rem; color: var(--gray-500); margin-top: 0.5rem;">Your profile will be saved so you can use "Load Saved Profile" on your next visit.</p>
+                    </div>
                 </div>
 
                 <!-- <section id="preferred-cut-section" class="card">
@@ -471,6 +528,15 @@
     <img id="lightbox-image" src="" alt="Full size image">
   </div>
 
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Submitting your booking...</p>
+      <p class="loading-subtext">Please wait while we process your appointment</p>
+    </div>
+  </div>
+
   <footer>
     <div class="container">
       <p>&copy; 2024 BestBuddies Pet Grooming. All rights reserved.</p>
@@ -494,7 +560,99 @@
 
   <script type="module" src="js/booking.js"></script>
 
-
+  <!-- Policy Agreement & Loading Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Policy scroll detection
+      const policyContainer = document.getElementById('policyScrollContainer');
+      const policyCheckbox = document.getElementById('agreeToPolicy');
+      const scrollIndicator = document.getElementById('scrollIndicator');
+      
+      if (policyContainer && policyCheckbox && scrollIndicator) {
+        // Check if already scrolled to bottom on load
+        setTimeout(function() {
+          const scrollTop = policyContainer.scrollTop;
+          const scrollHeight = policyContainer.scrollHeight;
+          const clientHeight = policyContainer.clientHeight;
+          const scrollPercentage = scrollHeight > 0 ? (scrollTop / (scrollHeight - clientHeight)) * 100 : 0;
+          
+          if (scrollPercentage >= 85 || (scrollHeight - clientHeight <= 10)) {
+            policyCheckbox.disabled = false;
+            scrollIndicator.classList.add('hidden');
+          }
+        }, 100);
+        
+        policyContainer.addEventListener('scroll', function() {
+          const scrollTop = policyContainer.scrollTop;
+          const scrollHeight = policyContainer.scrollHeight;
+          const clientHeight = policyContainer.clientHeight;
+          const scrollPercentage = scrollHeight > 0 ? (scrollTop / (scrollHeight - clientHeight)) * 100 : 0;
+          
+          // Enable checkbox when user scrolls to 85% of the content or near bottom
+          if (scrollPercentage >= 85 || (scrollHeight - scrollTop - clientHeight <= 10)) {
+            policyCheckbox.disabled = false;
+            scrollIndicator.classList.add('hidden');
+          }
+        });
+      }
+      
+      // Loading overlay functions
+      window.showLoadingOverlay = function() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+          overlay.classList.add('active');
+        }
+      };
+      
+      window.hideLoadingOverlay = function() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+          overlay.classList.remove('active');
+        }
+      };
+      
+      // Add event listener to policy checkbox to enable Next button
+      if (policyCheckbox) {
+        policyCheckbox.addEventListener('change', function() {
+          const nextBtn = document.getElementById('nextBtn');
+          if (nextBtn) {
+            nextBtn.disabled = !this.checked;
+          }
+        });
+        
+        policyCheckbox.addEventListener('click', function() {
+          setTimeout(() => {
+            const nextBtn = document.getElementById('nextBtn');
+            if (nextBtn) {
+              nextBtn.disabled = !this.checked;
+            }
+          }, 50);
+        });
+      }
+      
+      // Call enableNextButton after a short delay to ensure DOM is ready
+      setTimeout(function() {
+        if (typeof enableNextButton === 'function') {
+          enableNextButton();
+        }
+      }, 500);
+      
+      // Hook into submit booking button
+      const submitBtn = document.getElementById('submitBooking');
+      if (submitBtn) {
+        const originalClick = submitBtn.onclick;
+        submitBtn.addEventListener('click', function(e) {
+          // Show loading overlay when submitting
+          showLoadingOverlay();
+          
+          // Hide after 3 seconds if not redirected (fallback)
+          setTimeout(function() {
+            hideLoadingOverlay();
+          }, 10000);
+        });
+      }
+    });
+  </script>
 
   <script>
     // Render header nav links based on authentication state
@@ -504,22 +662,39 @@
         const mainNav = document.getElementById('mainNavLinks');
         const mobileNav = document.getElementById('mobileNavLinks');
         if (!mainNav || !mobileNav) return;
+        
         if (user) {
-          mainNav.innerHTML = '<li><a href="customer-dashboard.html">Dashboard</a></li>' +
+          // Determine dashboard URL based on role
+          let dashboardUrl = 'customer-dashboard.html';
+          let dashboardLabel = 'My Dashboard';
+          const role = (user.role || '').toLowerCase();
+          if (role === 'admin') {
+            dashboardUrl = 'admin-dashboard.html';
+            dashboardLabel = 'Admin Dashboard';
+          } else if (role === 'groomer' || role === 'groomers' || role === 'staff') {
+            dashboardUrl = 'groomer-dashboard.html';
+            dashboardLabel = 'Groomer Dashboard';
+          }
+          
+          mainNav.innerHTML = '<li><a href="index.html">Home</a></li>' +
+            '<li><a href="services.html">Services</a></li>' +
+            '<li><a href="reviews.html">Reviews</a></li>' +
+            '<li><a href="' + dashboardUrl + '">' + dashboardLabel + '</a></li>' +
             '<li><a href="#" onclick="logout(event)">Logout</a></li>';
-          mobileNav.innerHTML = '<li><a href="customer-dashboard.html">Dashboard</a></li>' +
+          mobileNav.innerHTML = '<li><a href="index.html">Home</a></li>' +
+            '<li><a href="services.html">Services</a></li>' +
+            '<li><a href="reviews.html">Reviews</a></li>' +
+            '<li><a href="' + dashboardUrl + '">' + dashboardLabel + '</a></li>' +
             '<li><a href="#" onclick="logout(event)">Logout</a></li>';
         } else {
-          mainNav.innerHTML = '<li><a href="public/index.html">Home</a></li>' +
-            '<li><a href="public/services.html">Services</a></li>' +
-            '<li><a href="public/reviews.html">Reviews</a></li>' +
-            '<li><a href="public/login.html">Login</a></li>' +
-            '<li><a href="#" onclick="handleBookNow()" class="btn btn-primary" style="background:#000;color:#fff;border:2px solid #000;">Book Now</a></li>';
-          mobileNav.innerHTML = '<li><a href="public/index.html">Home</a></li>' +
-            '<li><a href="public/services.html">Services</a></li>' +
-            '<li><a href="public/reviews.html">Reviews</a></li>' +
-            '<li><a href="public/login.html">Login</a></li>' +
-            '<li><a href="#" onclick="handleBookNow()">Book Now</a></li>';
+          mainNav.innerHTML = '<li><a href="index.html">Home</a></li>' +
+            '<li><a href="services.html">Services</a></li>' +
+            '<li><a href="reviews.html">Reviews</a></li>' +
+            '<li><a href="login.html">Login</a></li>';
+          mobileNav.innerHTML = '<li><a href="index.html">Home</a></li>' +
+            '<li><a href="services.html">Services</a></li>' +
+            '<li><a href="reviews.html">Reviews</a></li>' +
+            '<li><a href="login.html">Login</a></li>';
         }
       }
       renderNav();
