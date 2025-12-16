@@ -1123,7 +1123,6 @@ async function renderCommunityReviewFeed(targetId = 'adminReviewFeed', limit = 6
         return `<p style="font-size:0.85rem; background: #fff9e6; padding: 0.5rem; border-left: 3px solid #f57c00; margin: 0.5rem 0; font-weight: 500;"><strong>✂️ Notes:</strong> ${escapeHtml(notesText)}</p>`;
       }
     })()}
-        ${entry.groomingNotes ? `<p style="font-size:0.85rem; background: #f0f9f0; padding: 0.5rem; border-left: 3px solid #4CAF50; margin: 0.5rem 0; font-weight: 500;"><strong>✂️ Service:</strong> ${escapeHtml(entry.groomingNotes)}</p>` : ''}
         <p style="font-size:0.9rem; color:var(--gray-700);">
           ${entry.review ? `"${escapeHtml(entry.review)}"` : 'Fresh from the grooming table!'}
         </p>
@@ -2558,8 +2557,8 @@ async function renderFeaturedCutsGallery(targetId = 'homeFeaturedFeed', limit = 
     container.innerHTML = entries.map(entry => `
       <article class="review-card">
         <div class="review-card-gallery" onclick="openGalleryZoom('${entry.beforeImage}', '${entry.afterImage}', '${escapeHtml(entry.petName)}');" style="cursor: pointer;">
-          <img src="${entry.afterImage}" alt="After ${escapeHtml(entry.petName)}">
           <img src="${entry.beforeImage}" alt="Before ${escapeHtml(entry.petName)}">
+          <img src="${entry.afterImage}" alt="After ${escapeHtml(entry.petName)}">
         </div>
         <div class="review-card-content">
           <h4 style="margin-bottom:0.35rem;">${escapeHtml(entry.petName)}</h4>

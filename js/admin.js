@@ -876,7 +876,7 @@ function renderPendingBookingsTable(bookings) {
       <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
         <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">⏳</div>
         <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
-        ${searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+        ${searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem; margin-bottom: 1rem;">Clear the search to see all bookings.</p><button class="btn btn-primary btn-sm" onclick="clearPendingSearch()">🔄 Clear Search</button>` : ''}
       </div>
     `;
     return;
@@ -1121,7 +1121,7 @@ function renderConfirmedBookingsTable() {
       <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
         <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">✅</div>
         <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
-        ${adminState.confirmedSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+        ${adminState.confirmedSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem; margin-bottom: 1rem;">Clear the search to see all bookings.</p><button class="btn btn-primary btn-sm" onclick="clearConfirmedSearch()">🔄 Clear Search</button>` : ''}
       </div>
     `;
     return;
@@ -4730,7 +4730,7 @@ window.renderInProgressBookingsTable = function (bookings) {
       <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
         <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">🔄</div>
         <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
-        ${adminState.inprogressSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+        ${adminState.inprogressSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem; margin-bottom: 1rem;">Clear the search to see all bookings.</p><button class="btn btn-primary btn-sm" onclick="clearInprogressSearch()">🔄 Clear Search</button>` : ''}
       </div>
     `;
     return;
@@ -5434,7 +5434,7 @@ window.renderBookingHistoryTable = function (bookings) {
       <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
         <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📋</div>
         <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
-        ${bookingHistoryState.searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+        ${bookingHistoryState.searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem; margin-bottom: 1rem;">Clear the search to see all bookings.</p><button class="btn btn-primary btn-sm" onclick="clearBookingHistorySearch()">🔄 Clear Search</button>` : ''}
       </div>
     `;
     return;
@@ -5623,6 +5623,37 @@ window.searchBookingHistory = async function (query) {
     
     renderBookingHistoryTable();
   }, 300);
+};
+
+// Clear search functions
+window.clearBookingHistorySearch = function () {
+  bookingHistoryState.searchTerm = '';
+  bookingHistoryState.page = 1;
+  const searchInput = document.getElementById('bookingHistorySearch');
+  if (searchInput) searchInput.value = '';
+  renderBookingHistoryTable();
+};
+
+window.clearInprogressSearch = function () {
+  adminState.inprogressSearchTerm = '';
+  adminState.inprogressPage = 1;
+  const searchInput = document.getElementById('inprogressSearch');
+  if (searchInput) searchInput.value = '';
+  loadInProgressBookings();
+};
+
+window.clearConfirmedSearch = function () {
+  adminState.confirmedSearchTerm = '';
+  adminState.confirmedPage = 1;
+  const searchInput = document.getElementById('confirmedSearch');
+  if (searchInput) searchInput.value = '';
+  renderConfirmedBookingsTable();
+};
+
+window.clearPendingSearch = function () {
+  const searchInput = document.getElementById('pendingSearch');
+  if (searchInput) searchInput.value = '';
+  loadPendingBookings();
 };
 
 window.changeBookingHistorySortField = function (field) {

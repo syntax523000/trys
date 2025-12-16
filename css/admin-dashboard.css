@@ -55,6 +55,89 @@
   cursor: default;
 }
 
+/* Admin Community Grooming Feed - 4 columns, big images, small details */
+#adminReviewFeed.review-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  max-width: 100%;
+}
+
+#adminReviewFeed .review-card {
+  background: var(--white);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  border: 1px solid var(--gray-200);
+  overflow: hidden;
+}
+
+#adminReviewFeed .review-card-gallery {
+  aspect-ratio: 16 / 9;
+  min-height: 150px;
+}
+
+#adminReviewFeed .review-card-gallery img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#adminReviewFeed .review-card-content {
+  padding: 0.35rem 0.5rem;
+  background: var(--gray-50);
+}
+
+#adminReviewFeed .review-card-content p {
+  font-size: 0.65rem;
+  margin: 0;
+  line-height: 1.2;
+  color: var(--gray-600);
+}
+
+#adminReviewFeed .review-card-content p:first-child {
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
+/* Hide extra details in admin feed */
+#adminReviewFeed .review-card-content p:nth-child(n+4) {
+  display: none;
+}
+
+/* Tablet - 3 columns */
+@media (max-width: 1200px) {
+  #adminReviewFeed.review-feed-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Mobile - 2 columns */
+@media (max-width: 768px) {
+  #adminReviewFeed.review-feed-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  
+  #adminReviewFeed .review-card-gallery {
+    min-height: 120px;
+  }
+}
+
+/* Small mobile - 2 columns still */
+@media (max-width: 480px) {
+  #adminReviewFeed.review-feed-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  #adminReviewFeed .review-card-gallery {
+    min-height: 100px;
+  }
+  
+  #adminReviewFeed .review-card-content p {
+    font-size: 0.6rem;
+  }
+}
+
 .booking-filter-group {
   display: flex;
   flex-wrap: wrap;
