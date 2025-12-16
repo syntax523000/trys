@@ -50,6 +50,26 @@ async function loadCustomerDashboard() {
   setupCustomerPasswordForm();
 }
 
+// Debounce timeout for customer bookings search
+let customerBookingsSearchTimeout = null;
+let customerHistorySearchTimeout = null;
+
+// Debounced search function for customer bookings
+window.searchCustomerBookings = function(query) {
+  if (customerBookingsSearchTimeout) clearTimeout(customerBookingsSearchTimeout);
+  customerBookingsSearchTimeout = setTimeout(() => {
+    renderCustomerBookings();
+  }, 300);
+};
+
+// Debounced search function for customer history
+window.searchCustomerHistory = function(query) {
+  if (customerHistorySearchTimeout) clearTimeout(customerHistorySearchTimeout);
+  customerHistorySearchTimeout = setTimeout(() => {
+    filterCustomerHistory();
+  }, 300);
+};
+
 // Setup sidebar navigation
 function setupCustomerSidebarNavigation() {
   const menuItems = document.querySelectorAll('.sidebar-menu a[data-view]');
@@ -973,13 +993,47 @@ async function renderCustomerBookingHistory() {
   const userBookings = bookings.filter(b => b.userId === user.id);
 
   if (!history.length) {
-    if (!userBookings.length) {
-      container.innerHTML = '<p class="empty-state">No booking history yet.</p>';
-    } else {
-      container.innerHTML = renderCustomerHistoryFallback(userBookings);
-    }
+    const message = customerHistoryState.searchTerm 
+      ? `No results found for "${customerHistoryState.searchTerm}". Try a different search term.`
+      : 'No booking history yet. Completed and cancelled bookings will appear here.';
+    container.innerHTML = `
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📋</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${customerHistoryState.searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all history.</p>` : ''}
+      </div>
+    `;
+    // Still show controls even when empty
     const controls = document.getElementById('customerHistoryControls');
-    if (controls) controls.innerHTML = '';
+    if (controls) {
+      controls.innerHTML = `
+        <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem;">
+          <div class="search-bar" style="margin-bottom: 0;">
+            <input type="text" id="customerHistorySearch" class="search-input" placeholder="🔍 Search by booking ID, action, or details..." 
+              value="${customerHistoryState.searchTerm || ''}" onkeyup="searchCustomerHistory(this.value)">
+          </div>
+          <div style="display: flex; align-items: center; gap: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); flex-wrap: wrap;">
+            <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
+            <select id="customerHistorySortOrder" class="form-select" style="width: auto; padding: 0.5rem;" onchange="filterCustomerHistory()">
+              <option value="desc" ${customerHistoryState.sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+              <option value="asc" ${customerHistoryState.sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
+            </select>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <label for="customerHistoryPageSize" style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
+              <select id="customerHistoryPageSize" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeCustomerHistoryPageSize(this.value)">
+                <option value="5" ${customerHistoryState.pageSize === 5 ? 'selected' : ''}>5</option>
+                <option value="10" ${customerHistoryState.pageSize === 10 ? 'selected' : ''}>10</option>
+                <option value="20" ${customerHistoryState.pageSize === 20 ? 'selected' : ''}>20</option>
+                <option value="50" ${customerHistoryState.pageSize === 50 ? 'selected' : ''}>50</option>
+              </select>
+              <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
     return;
   }
 
@@ -992,35 +1046,41 @@ async function renderCustomerBookingHistory() {
   if (controls) {
     controls.innerHTML = `
       <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-          <input type="text" id="customerHistorySearch" class="form-input" placeholder="🔍 Search by booking ID, action, or details..." style="flex: 1; min-width: 200px;" onkeyup="filterCustomerHistory()">
+        <div class="search-bar" style="margin-bottom: 0;">
+          <input type="text" id="customerHistorySearch" class="search-input" placeholder="🔍 Search by booking ID, action, or details..." 
+            value="${customerHistoryState.searchTerm || ''}" onkeyup="searchCustomerHistory(this.value)">
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm); flex-wrap: wrap;">
+          <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
           <select id="customerHistorySortOrder" class="form-select" style="width: auto; padding: 0.5rem;" onchange="filterCustomerHistory()">
-            <option value="desc">Newest First</option>
-            <option value="asc">Oldest First</option>
+            <option value="desc" ${customerHistoryState.sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+            <option value="asc" ${customerHistoryState.sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
           </select>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <label for="customerHistoryPageSize" style="font-size: 0.9rem; color: var(--gray-600);">Show:</label>
+            <label for="customerHistoryPageSize" style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
             <select id="customerHistoryPageSize" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeCustomerHistoryPageSize(this.value)">
-              <option value="3" ${customerHistoryState.pageSize === 3 ? 'selected' : ''}>3</option>
               <option value="5" ${customerHistoryState.pageSize === 5 ? 'selected' : ''}>5</option>
               <option value="10" ${customerHistoryState.pageSize === 10 ? 'selected' : ''}>10</option>
               <option value="20" ${customerHistoryState.pageSize === 20 ? 'selected' : ''}>20</option>
+              <option value="50" ${customerHistoryState.pageSize === 50 ? 'selected' : ''}>50</option>
             </select>
             <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <span style="font-size: 0.9rem; color: var(--gray-600);">
-              Showing ${start + 1} to ${Math.min(end, history.length)} of ${history.length}
-            </span>
-            ${totalPages > 1 ? `
-              <button class="btn btn-outline btn-sm" onclick="changeCustomerHistoryPage(${customerHistoryState.page - 1})" ${customerHistoryState.page === 1 ? 'disabled' : ''}>Previous</button>
-              <span style="font-size: 0.9rem; color: var(--gray-600);">Page ${customerHistoryState.page} of ${totalPages}</span>
-              <button class="btn btn-outline btn-sm" onclick="changeCustomerHistoryPage(${customerHistoryState.page + 1})" ${customerHistoryState.page === totalPages ? 'disabled' : ''}>Next</button>
-            ` : ''}
+          <div style="font-size: 0.9rem; color: var(--gray-600);">
+            Showing ${start + 1} to ${Math.min(end, history.length)} of ${history.length}
           </div>
         </div>
+        ${totalPages > 1 ? `
+          <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem;">
+            <button class="btn btn-sm btn-outline" onclick="changeCustomerHistoryPage(1)" ${customerHistoryState.page === 1 ? 'disabled' : ''}>«</button>
+            <button class="btn btn-sm btn-outline" onclick="changeCustomerHistoryPage(${customerHistoryState.page - 1})" ${customerHistoryState.page === 1 ? 'disabled' : ''}>‹</button>
+            <span style="padding: 0.5rem 1rem; font-size: 0.9rem; color: var(--gray-700);">Page ${customerHistoryState.page} of ${totalPages}</span>
+            <button class="btn btn-sm btn-outline" onclick="changeCustomerHistoryPage(${customerHistoryState.page + 1})" ${customerHistoryState.page === totalPages ? 'disabled' : ''}>›</button>
+            <button class="btn btn-sm btn-outline" onclick="changeCustomerHistoryPage(${totalPages})" ${customerHistoryState.page === totalPages ? 'disabled' : ''}>»</button>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -1775,35 +1835,9 @@ async function toggleGalleryPublic(bookingId, isPublic) {
 }
 window.toggleGalleryPublic = toggleGalleryPublic;
 
-// Ensure required helpers exist early (fallbacks) so loadCustomerDashboard can call them safely
-if (typeof window.renderCommunityShowcase !== 'function') {
-  async function renderCommunityShowcase() {
-    const container = document.getElementById('communityShowcase') || document.getElementById('customerShowcase');
-    if (!container) return;
-    container.innerHTML = '<div class="muted" style="padding:1rem">Community photos coming soon.</div>';
-  }
-  window.renderCommunityShowcase = renderCommunityShowcase;
-}
-
-if (typeof window.formatBookingStatus !== 'function') {
-  function formatBookingStatus(status) {
-    if (status === null || status === undefined) return 'Unknown';
-    const s = String(status).trim();
-    const map = {
-      pending: 'Pending',
-      confirmed: 'Confirmed',
-      inprogress: 'In Progress',
-      'in progress': 'In Progress',
-      completed: 'Completed',
-      cancelled: 'Cancelled',
-      cancelledbycustomer: 'Cancelled (Customer)',
-      cancelledbyadmin: 'Cancelled (Admin)'
-    };
-    const key = s.toLowerCase().replace(/\s+/g, '');
-    return map[key] || s.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
-  }
-  window.formatBookingStatus = formatBookingStatus;
-}
+// Window exports for helper functions (main definitions are above)
+window.renderCommunityShowcase = renderCommunityShowcase;
+window.formatBookingStatus = formatBookingStatus;
 
 // Provide a safe global closeModal so HTML buttons won't throw
 function closeModal() {

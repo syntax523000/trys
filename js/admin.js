@@ -18,6 +18,16 @@ const adminState = {
 
   confirmedPage: 1,
   confirmedPageSize: 5,
+  confirmedSortBy: 'date',
+  confirmedSortOrder: 'asc',
+  confirmedSearchTerm: '',
+
+  // In Progress state
+  inprogressPage: 1,
+  inprogressPageSize: 5,
+  inprogressSortBy: 'date',       // Sort field: 'date', 'customer', 'package'
+  inprogressSortOrder: 'asc',     // Sort direction: 'asc', 'desc'
+  inprogressSearchTerm: '',       // Search term for filtering
 
   customersPage: 1,
   customersPageSize: 5,
@@ -53,6 +63,13 @@ const adminState = {
     return this.startIndex + this.historyPageSize;
   }
 };
+
+// Debounce timeout variables for search functions
+let confirmedSearchTimeout = null;
+let customersSearchTimeout = null;
+let inprogressSearchTimeout = null;
+let pendingSearchTimeout = null;
+let pendingBookingsSearchTimeout = null;
 
 // Generic pagination controls renderer
 function renderPaginationControls(containerId, statePrefix, totalItems, onPageChange, onSizeChange) {
@@ -175,18 +192,60 @@ function generatePriceBreakdown(booking, pkg = null) {
 
   if (!booking) return '';
 
-  // Get package price
-  const packagePrice = booking.cost?.packagePrice || pkg?.price || 0;
+  const cost = booking.cost || {};
+  const isSingleService = booking.packageId === 'single-service';
+  
+  // Get single services from cost.services or booking.singleServices
+  const singleServices = cost.services || [];
+  const singleServicesIds = booking.singleServices || [];
+  
+  // Calculate single services total
+  let singleServicesTotal = 0;
+  let singleServicesHtml = '';
+  
+  if (isSingleService && (singleServices.length > 0 || singleServicesIds.length > 0)) {
+    // If cost.services has the prices, use that
+    if (singleServices.length > 0) {
+      singleServicesTotal = singleServices.reduce((sum, s) => sum + (s.price || 0), 0);
+      singleServicesHtml = singleServices.map(service => 
+        `<div style="padding-left: 1.5rem; color: var(--gray-600); font-size: 0.9rem;">
+          • ${escapeHtml(service.label || service.serviceId || 'Service')} - ${formatCurrency(service.price || 0)}
+        </div>`
+      ).join('');
+    } else if (singleServicesIds.length > 0) {
+      // Fallback: use SINGLE_SERVICE_PRICING to get labels and estimate prices
+      const pricing = window.SINGLE_SERVICE_PRICING || {};
+      singleServicesHtml = singleServicesIds.map(serviceId => {
+        const serviceInfo = pricing[serviceId];
+        const label = serviceInfo?.label || serviceId;
+        // Try to get price from tiers based on pet weight
+        let price = 0;
+        if (serviceInfo?.tiers) {
+          const weightLabel = booking.petWeight || '';
+          const isSmall = weightLabel.includes('5kg') || weightLabel.includes('below');
+          const tier = isSmall ? serviceInfo.tiers.small : serviceInfo.tiers.large;
+          price = tier?.price || 0;
+        }
+        singleServicesTotal += price;
+        return `<div style="padding-left: 1.5rem; color: var(--gray-600); font-size: 0.9rem;">
+          • ${escapeHtml(label)} - ${formatCurrency(price)}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // Get package price - try multiple sources (0 for single service)
+  const packagePrice = isSingleService ? 0 : (cost.packagePrice || booking.totalPrice || pkg?.price || 0);
 
   // Calculate add-ons total
-  const addOns = booking.addOns || [];
+  const addOns = booking.addOns || cost.addOns || [];
   const addOnsTotal = addOns.reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
 
   // Calculate subtotal
-  const subtotal = packagePrice + addOnsTotal;
+  const subtotal = packagePrice + addOnsTotal + singleServicesTotal;
 
   // Get booking fee
-  const bookingFee = booking.cost?.bookingFee || 0;
+  const bookingFee = cost.bookingFee || 0;
 
   // Check if status allows add-ons (confirmed, in progress) - show full breakdown
   const statusLower = (booking.status || '').toLowerCase();
@@ -222,15 +281,25 @@ function generatePriceBreakdown(booking, pkg = null) {
     `;
   }
 
-  // For CONFIRMED/IN PROGRESS/COMPLETED: Show full breakdown with Package, Add-ons, Subtotal
+  // For CONFIRMED/IN PROGRESS/COMPLETED: Show full breakdown
   let html = `
     <div class="price-breakdown" style="background: var(--gray-50); padding: 1rem; border-radius: var(--radius-sm); margin: 1rem 0; border: 1px solid var(--gray-200);">
       <h4 style="margin-top: 0; margin-bottom: 0.75rem; color: var(--gray-900);">Price Breakdown</h4>
       
-      <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300);">
-        <span style="font-weight: 500;">Package</span>
-        <span style="font-weight: 600;">${formatCurrency(packagePrice)}</span>
-      </div>
+      ${isSingleService && singleServicesHtml ? `
+        <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300);">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+            <span style="font-weight: 500;">Single Services</span>
+            <span style="font-weight: 600;">${formatCurrency(singleServicesTotal)}</span>
+          </div>
+          ${singleServicesHtml}
+        </div>
+      ` : `
+        <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300);">
+          <span style="font-weight: 500;">Package</span>
+          <span style="font-weight: 600;">${formatCurrency(packagePrice)}</span>
+        </div>
+      `}
       
       ${addOns.length > 0 ? `
         <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--gray-300);">
@@ -243,7 +312,8 @@ function generatePriceBreakdown(booking, pkg = null) {
       ` : ''}
       
       <div style="display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 2px solid var(--gray-400); font-weight: 600;">
-       
+        <span>Subtotal</span>
+        <span>${formatCurrency(subtotal)}</span>
       </div>
       
       ${isPaidStatus && bookingFee > 0 ? `
@@ -261,27 +331,6 @@ function generatePriceBreakdown(booking, pkg = null) {
   `;
 
   return html;
-}
-
-// Diagnostic function to check bookingNotes in all bookings
-async function diagnoseBookingNotes() {
-  const bookings = await getBookings();
-  console.log('=== BOOKING NOTES DIAGNOSTIC ===');
-  console.log(`Total bookings: ${bookings.length}`);
-
-  bookings.forEach((booking, idx) => {
-    const hasNotes = booking.bookingNotes && booking.bookingNotes.trim();
-    const preferredCut = extractPreferredCut(booking.bookingNotes);
-    console.log(`Booking ${idx + 1} (${booking.id || booking.shortId}):`, {
-      hasBookingNotes: !!booking.bookingNotes,
-      bookingNotesValue: booking.bookingNotes || '(empty)',
-      preferredCut: preferredCut || '(none detected)',
-      customerName: booking.customerName,
-      petName: booking.petName
-    });
-  });
-
-  return bookings;
 }
 
 // Initialize admin dashboard
@@ -397,6 +446,10 @@ function switchView(view) {
       document.getElementById('historyView').style.display = 'block';
       renderBookingHistory();
       break;
+    case 'bookinghistory':
+      document.getElementById('bookinghistoryView').style.display = 'block';
+      loadBookingHistory();
+      break;
     case 'gallery':
       document.getElementById('galleryView').style.display = 'block';
       loadGalleryView();
@@ -455,25 +508,6 @@ async function loadOverview() {
   await renderFeaturedCutsPanel();
   await renderCommunityReviewFeed('adminReviewFeed', 6);
 }
-
-// Diagnostic helper: prints status distribution and sample bookings
-async function diagnoseBookingStatus() {
-  const bookings = await getBookings();
-  if (!Array.isArray(bookings)) {
-    console.warn('Bookings not an array:', bookings);
-    return bookings;
-  }
-  const counts = bookings.reduce((acc, b) => {
-    const s = String(b.status || 'unknown').trim().toLowerCase();
-    acc[s] = (acc[s] || 0) + 1;
-    return acc;
-  }, {});
-  console.log('Booking status distribution:', counts);
-  // Show first 10 bookings with id/status for inspection
-  console.table(bookings.slice(0, 20).map(b => ({ id: b.id || b.shortId, status: b.status, date: b.date, time: b.time })));
-  return { counts, sample: bookings.slice(0, 20) };
-}
-window.diagnoseBookingStatus = diagnoseBookingStatus;
 
 // Update stats cards with clickable/sortable functionality
 function updateStatsCards(totalBookings, pendingBookings, confirmedBookings, cancelledBookings, totalCustomers, totalRevenue = 0) {
@@ -662,11 +696,12 @@ function renderRecentBookings(bookings) {
     const bookingCode = typeof getBookingDisplayCode === 'function'
       ? getBookingDisplayCode(booking)
       : (booking.shortId || booking.id);
-    const statusClass = ['confirmed', 'completed'].includes(booking.status)
+    const statusLower = (booking.status || '').toLowerCase();
+    const statusClass = ['confirmed', 'completed'].includes(statusLower)
       ? 'badge-confirmed'
-      : booking.status === 'In Progress'
+      : statusLower === 'in progress'
         ? 'badge-inprogress'
-        : ['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes(booking.status)
+        : ['cancelled', 'cancelledbycustomer', 'cancelledbyadmin'].includes(statusLower)
           ? 'badge-cancelled'
           : 'badge-pending';
     const statusLabel = formatBookingStatus(booking.status);
@@ -832,7 +867,18 @@ function renderPendingBookingsTable(bookings) {
   if (!container) return;
 
   if (bookings.length === 0) {
-    container.innerHTML = '<p class="empty-state">No pending bookings</p>';
+    const searchInput = document.getElementById('pendingSearch');
+    const searchTerm = searchInput ? searchInput.value : '';
+    const message = searchTerm 
+      ? `No results found for "${searchTerm}". Try a different search term.`
+      : 'No pending bookings available yet.';
+    container.innerHTML = `
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">⏳</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+      </div>
+    `;
     return;
   }
 
@@ -958,7 +1004,7 @@ function renderPendingBookingsTable(bookings) {
               <td>${escapeHtml(booking.customerName)}</td>
               <td>${escapeHtml(typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : (booking.shortId || booking.id))}</td>
               <td>${escapeHtml(booking.petName)} (${escapeHtml(booking.petType)})</td>
-              <td>${escapeHtml(booking.packageName)}</td>
+              <td>${escapeHtml(booking.packageName)}${booking.packageId === 'single-service' && booking.singleServices?.length ? `<br><span style="font-size: 0.8rem; color: var(--gray-600);">${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')}</span>` : ''}</td>
               <td>${cutDisplay}</td>
               <td>${formatDate(booking.date)}</td>
               <td>${formatTime(booking.time)}</td>
@@ -1035,41 +1081,132 @@ window.changePendingSortOrder = function (order) {
   loadPendingBookings();
 };
 
+// Confirmed bookings cache
+let confirmedBookingsCache = [];
+
 // Load confirmed bookings
 async function loadConfirmedBookings() {
   const bookings = await getBookings();
   // STRICT FILTER: Only 'confirmed'
-  const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
-
-  renderConfirmedBookingsTable(confirmedBookings);
+  confirmedBookingsCache = bookings.filter(b => b.status === 'confirmed');
+  renderConfirmedBookingsTable();
 }
 
 // Render confirmed bookings table
-function renderConfirmedBookingsTable(bookings) {
+function renderConfirmedBookingsTable() {
   const container = document.getElementById('confirmedBookingsTable');
   if (!container) return;
 
-  if (bookings.length === 0) {
-    container.innerHTML = '<p class="empty-state">No confirmed bookings</p>';
+  let filteredBookings = [...confirmedBookingsCache];
+
+  // Apply search filter
+  if (adminState.confirmedSearchTerm) {
+    const q = adminState.confirmedSearchTerm.toLowerCase();
+    filteredBookings = filteredBookings.filter(b =>
+      (b.customerName || '').toLowerCase().includes(q) ||
+      (b.petName || '').toLowerCase().includes(q) ||
+      (b.packageName || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (filteredBookings.length === 0) {
+    const message = adminState.confirmedSearchTerm 
+      ? `No results found for "${adminState.confirmedSearchTerm}". Try a different search term.`
+      : 'No confirmed bookings available yet.';
+    container.innerHTML = `
+      <div class="search-bar" style="margin-bottom: 1rem;">
+        <input type="text" class="search-input" placeholder="🔍 Search by customer, pet, or package..."
+          value="${adminState.confirmedSearchTerm || ''}" onkeyup="searchConfirmedBookings(this.value)">
+      </div>
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">✅</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${adminState.confirmedSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+      </div>
+    `;
     return;
   }
 
+  // Apply sorting
+  const sortBy = adminState.confirmedSortBy || 'date';
+  const sortOrder = adminState.confirmedSortOrder || 'asc';
+
+  filteredBookings.sort((a, b) => {
+    let valA, valB;
+    switch (sortBy) {
+      case 'customer':
+        valA = (a.customerName || '').toLowerCase();
+        valB = (b.customerName || '').toLowerCase();
+        break;
+      case 'package':
+        valA = (a.packageName || '').toLowerCase();
+        valB = (b.packageName || '').toLowerCase();
+        break;
+      case 'total':
+        valA = a.totalPrice || a.cost?.subtotal || 0;
+        valB = b.totalPrice || b.cost?.subtotal || 0;
+        break;
+      case 'date':
+      default:
+        valA = new Date(a.date + ' ' + (a.time || '00:00'));
+        valB = new Date(b.date + ' ' + (b.time || '00:00'));
+        break;
+    }
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   // Pagination logic
-  const totalItems = bookings.length;
-  const pageSize = adminState.confirmedPageSize;
+  const totalItems = filteredBookings.length;
+  const pageSize = adminState.confirmedPageSize || 5;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
 
   // Ensure current page is valid
   if (adminState.confirmedPage > totalPages) adminState.confirmedPage = totalPages;
   if (adminState.confirmedPage < 1) adminState.confirmedPage = 1;
 
-  const start = (adminState.confirmedPage - 1) * pageSize;
-  const currentSlice = bookings.slice(start, start + pageSize);
+  const startIndex = (adminState.confirmedPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const currentSlice = filteredBookings.slice(startIndex, endIndex);
 
-  // Create controls container ID
-  const controlsId = 'confirmedPaginationControls';
+  // Build HTML with controls
+  let html = `
+    <div class="search-bar" style="margin-bottom: 1rem;">
+      <input type="text" class="search-input" placeholder="🔍 Search by customer, pet, or package..."
+        value="${adminState.confirmedSearchTerm || ''}" onkeyup="searchConfirmedBookings(this.value)">
+    </div>
 
-  let html = `<div id="${controlsId}"></div>`;
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
+        <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeConfirmedPageSize(this.value)">
+          <option value="5" ${pageSize === 5 ? 'selected' : ''}>5</option>
+          <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${pageSize === 50 ? 'selected' : ''}>50</option>
+        </select>
+        <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
+      </div>
+      <div style="font-size: 0.9rem; color: var(--gray-600);">
+        Showing ${startIndex + 1} to ${endIndex} of ${totalItems}
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm);">
+      <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
+      <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeConfirmedSortField(this.value)">
+        <option value="date" ${sortBy === 'date' ? 'selected' : ''}>Date</option>
+        <option value="customer" ${sortBy === 'customer' ? 'selected' : ''}>Customer</option>
+        <option value="package" ${sortBy === 'package' ? 'selected' : ''}>Package</option>
+        <option value="total" ${sortBy === 'total' ? 'selected' : ''}>Total</option>
+      </select>
+      <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeConfirmedSortOrder(this.value)">
+        <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Ascending</option>
+        <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Descending</option>
+      </select>
+    </div>
+  `;
 
   html += `
     <div class="table-container">
@@ -1121,7 +1258,7 @@ function renderConfirmedBookingsTable(bookings) {
               <td>${escapeHtml(booking.customerName)}</td>
               <td>${escapeHtml(typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : (booking.shortId || booking.id))}</td>
               <td>${escapeHtml(booking.petName)} (${escapeHtml(booking.petType)})</td>
-              <td>${escapeHtml(booking.packageName)}</td>
+              <td>${escapeHtml(booking.packageName)}${booking.packageId === 'single-service' && booking.singleServices?.length ? `<br><span style="font-size: 0.8rem; color: var(--gray-600);">${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')}</span>` : ''}</td>
               <td>${cutDisplay}</td>
               <td>${formatDate(booking.date)}</td>
               <td>${formatTime(booking.time)}</td>
@@ -1156,22 +1293,56 @@ function renderConfirmedBookingsTable(bookings) {
     </div>
   `;
 
-  container.innerHTML = html;
+  // Pagination controls
+  if (totalPages > 1) {
+    html += `
+      <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn btn-sm btn-outline" onclick="changeConfirmedPage(1)" ${adminState.confirmedPage === 1 ? 'disabled' : ''}>«</button>
+        <button class="btn btn-sm btn-outline" onclick="changeConfirmedPage(${adminState.confirmedPage - 1})" ${adminState.confirmedPage === 1 ? 'disabled' : ''}>‹</button>
+        <span style="padding: 0.5rem 1rem; font-size: 0.9rem; color: var(--gray-700);">Page ${adminState.confirmedPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline" onclick="changeConfirmedPage(${adminState.confirmedPage + 1})" ${adminState.confirmedPage === totalPages ? 'disabled' : ''}>›</button>
+        <button class="btn btn-sm btn-outline" onclick="changeConfirmedPage(${totalPages})" ${adminState.confirmedPage === totalPages ? 'disabled' : ''}>»</button>
+      </div>
+    `;
+  }
 
-  // Render pagination controls
-  renderPaginationControls(controlsId, 'confirmed', totalItems, 'changeConfirmedPage', 'changeConfirmedPageSize');
+  container.innerHTML = html;
 }
 
-// Window handlers for confirmed pagination
-window.changeConfirmedPage = function (page) {
-  adminState.confirmedPage = parseInt(page);
-  loadConfirmedBookings();
+// Window handlers for confirmed bookings
+window.searchConfirmedBookings = function(query) {
+  if (confirmedSearchTimeout) clearTimeout(confirmedSearchTimeout);
+  confirmedSearchTimeout = setTimeout(() => {
+    adminState.confirmedSearchTerm = query;
+    adminState.confirmedPage = 1;
+    renderConfirmedBookingsTable();
+  }, 300);
 };
 
-window.changeConfirmedPageSize = function (size) {
-  adminState.confirmedPageSize = parseInt(size);
+window.changeConfirmedSortField = function(field) {
+  adminState.confirmedSortBy = field;
   adminState.confirmedPage = 1;
-  loadConfirmedBookings();
+  renderConfirmedBookingsTable();
+};
+
+window.changeConfirmedSortOrder = function(order) {
+  adminState.confirmedSortOrder = order;
+  adminState.confirmedPage = 1;
+  renderConfirmedBookingsTable();
+};
+
+window.changeConfirmedPage = function(page) {
+  const totalPages = Math.ceil(confirmedBookingsCache.length / adminState.confirmedPageSize) || 1;
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  adminState.confirmedPage = page;
+  renderConfirmedBookingsTable();
+};
+
+window.changeConfirmedPageSize = function(size) {
+  adminState.confirmedPageSize = parseInt(size, 10);
+  adminState.confirmedPage = 1;
+  renderConfirmedBookingsTable();
 };
 
 // Load calendar view
@@ -1380,6 +1551,16 @@ function updateCalendarBlockStatus(date) {
   }
 }
 
+// Customer management state
+let customersCache = [];
+let customersState = {
+  page: 1,
+  pageSize: 5,
+  sortBy: 'name',
+  sortOrder: 'asc',
+  searchTerm: ''
+};
+
 // Load customer management
 async function loadCustomerManagement() {
   const users = await getUsers();
@@ -1395,28 +1576,137 @@ async function loadCustomerManagement() {
     };
   });
 
-  // Sort customers alphabetically by name
-  customersWithBookings.sort((a, b) => {
-    const nameA = (a.name || '').toLowerCase();
-    const nameB = (b.name || '').toLowerCase();
-    return nameA.localeCompare(nameB);
-  });
-
-  renderCustomerTable(customersWithBookings);
+  customersCache = customersWithBookings;
+  
+  // Initialize search input only once
+  const container = document.getElementById('customersTable');
+  if (container && !document.getElementById('customersSearch')) {
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'search-bar';
+    searchDiv.style.marginBottom = '1rem';
+    searchDiv.innerHTML = `
+      <input type="text" id="customersSearch" class="search-input"
+        placeholder="🔍 Search by name or email..."
+        onkeyup="searchCustomers(this.value)">
+    `;
+    container.insertBefore(searchDiv, container.firstChild);
+  }
+  
+  renderCustomerTable();
 }
 
-// Load uplift requests for admin review
-// Render customer table
-function renderCustomerTable(customers) {
+// Render customer table with sorting, pagination, and search
+function renderCustomerTable() {
   const container = document.getElementById('customersTable');
   if (!container) return;
 
-  if (customers.length === 0) {
-    container.innerHTML = '<p class="empty-state">No customers yet</p>';
+  let filteredCustomers = [...customersCache];
+
+  // Apply search filter
+  if (customersState.searchTerm) {
+    const q = customersState.searchTerm.toLowerCase();
+    filteredCustomers = filteredCustomers.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (filteredCustomers.length === 0) {
+    const message = customersState.searchTerm 
+      ? `No results found for "${customersState.searchTerm}". Try a different search term.`
+      : 'No customers available yet.';
+    container.innerHTML = `
+      <div class="search-bar" style="margin-bottom: 1rem;">
+        <input type="text" id="customersSearch" class="search-input"
+          placeholder="🔍 Search by name or email..."
+          value="${customersState.searchTerm || ''}"
+          onkeyup="searchCustomers(this.value)">
+      </div>
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">👥</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${customersState.searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all customers.</p>` : ''}
+      </div>
+    `;
     return;
   }
 
-  container.innerHTML = `
+  // Apply sorting
+  const sortBy = customersState.sortBy || 'name';
+  const sortOrder = customersState.sortOrder || 'asc';
+
+  filteredCustomers.sort((a, b) => {
+    let valA, valB;
+    switch (sortBy) {
+      case 'email':
+        valA = (a.email || '').toLowerCase();
+        valB = (b.email || '').toLowerCase();
+        break;
+      case 'bookings':
+        valA = a.bookingCount || 0;
+        valB = b.bookingCount || 0;
+        break;
+      case 'warnings':
+        valA = a.warningCount || 0;
+        valB = b.warningCount || 0;
+        break;
+      case 'status':
+        valA = a.isBanned ? 2 : ((a.warningCount || 0) >= WARNING_THRESHOLD ? 1 : 0);
+        valB = b.isBanned ? 2 : ((b.warningCount || 0) >= WARNING_THRESHOLD ? 1 : 0);
+        break;
+      case 'name':
+      default:
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+        break;
+    }
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Pagination
+  const pageSize = customersState.pageSize || 5;
+  const currentPage = customersState.page || 1;
+  const totalItems = filteredCustomers.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const paginatedCustomers = filteredCustomers.slice(startIndex, endIndex);
+
+  // Build HTML (without search input - it's managed separately)
+  let html = `
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
+        <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeCustomersPageSize(this.value)">
+          <option value="5" ${pageSize === 5 ? 'selected' : ''}>5</option>
+          <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${pageSize === 50 ? 'selected' : ''}>50</option>
+        </select>
+        <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
+      </div>
+      <div style="font-size: 0.9rem; color: var(--gray-600);">
+        Showing ${startIndex + 1} to ${endIndex} of ${totalItems}
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm);">
+      <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
+      <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeCustomersSortField(this.value)">
+        <option value="name" ${sortBy === 'name' ? 'selected' : ''}>Name</option>
+        <option value="email" ${sortBy === 'email' ? 'selected' : ''}>Email</option>
+        <option value="bookings" ${sortBy === 'bookings' ? 'selected' : ''}>Total Bookings</option>
+        <option value="warnings" ${sortBy === 'warnings' ? 'selected' : ''}>Warnings</option>
+        <option value="status" ${sortBy === 'status' ? 'selected' : ''}>Status</option>
+      </select>
+      <select class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeCustomersSortOrder(this.value)">
+        <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Ascending</option>
+        <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Descending</option>
+      </select>
+    </div>
+
     <div class="table-container">
       <table>
         <thead>
@@ -1431,42 +1721,51 @@ function renderCustomerTable(customers) {
           </tr>
         </thead>
         <tbody>
-          ${customers.map(customer => `
-            ${(() => {
-      const warningCount = customer.warningCount || 0;
-      const limit = typeof WARNING_HARD_LIMIT === 'number' ? WARNING_HARD_LIMIT : 5;
-      const joined = customer.createdAt
-        ? formatDate(toLocalISO(new Date(customer.createdAt)))
-        : '—';
-      const statusLabel = customer.isBanned
-        ? 'Banned'
-        : (warningCount >= WARNING_THRESHOLD ? 'Watchlist' : 'Active');
-      const statusClass = customer.isBanned
-        ? 'badge badge-cancelled'
-        : (warningCount >= WARNING_THRESHOLD ? 'badge badge-pending' : 'badge badge-confirmed');
-      const canLift = customer.isBanned || warningCount >= limit;
-      return `
-                <tr>
-                  <td>${escapeHtml(customer.name)}</td>
-                  <td>${escapeHtml(customer.email)}</td>
-                  <td>${joined}</td>
-                  <td>${customer.bookingCount}</td>
-                  <td>${warningCount}/${limit}</td>
-                  <td><span class="${statusClass}" style="text-transform:capitalize;">${statusLabel}</span></td>
-                  <td style="display:flex; gap:0.25rem; flex-wrap:wrap;">
-                    <button class="btn btn-outline btn-sm" data-add-warning="${customer.id}">Add Warning</button>
-                    ${customer.isBanned ? '' : `<button class="btn btn-danger btn-sm" data-ban="${customer.id}">Ban</button>`}
-                    ${canLift ? `<button class="btn btn-success btn-sm" data-lift="${customer.id}">Lift</button>` : ''}
-                  </td>
-                </tr>
-              `;
-    })()}
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
   `;
 
+  paginatedCustomers.forEach(customer => {
+    const warningCount = customer.warningCount || 0;
+    const limit = typeof WARNING_HARD_LIMIT === 'number' ? WARNING_HARD_LIMIT : 5;
+    const joined = customer.createdAt ? formatDate(toLocalISO(new Date(customer.createdAt))) : '—';
+    const statusLabel = customer.isBanned ? 'Banned' : (warningCount >= WARNING_THRESHOLD ? 'Watchlist' : 'Active');
+    const statusClass = customer.isBanned ? 'badge badge-cancelled' : (warningCount >= WARNING_THRESHOLD ? 'badge badge-pending' : 'badge badge-confirmed');
+    const canLift = customer.isBanned || warningCount >= limit;
+
+    html += `
+      <tr>
+        <td>${escapeHtml(customer.name)}</td>
+        <td>${escapeHtml(customer.email)}</td>
+        <td>${joined}</td>
+        <td>${customer.bookingCount}</td>
+        <td>${warningCount}/${limit}</td>
+        <td><span class="${statusClass}" style="text-transform:capitalize;">${statusLabel}</span></td>
+        <td style="display:flex; gap:0.25rem; flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" data-add-warning="${customer.id}">Add Warning</button>
+          ${customer.isBanned ? '' : `<button class="btn btn-danger btn-sm" data-ban="${customer.id}">Ban</button>`}
+          ${canLift ? `<button class="btn btn-success btn-sm" data-lift="${customer.id}">Lift</button>` : ''}
+        </td>
+      </tr>
+    `;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Pagination controls
+  if (totalPages > 1) {
+    html += `
+      <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn btn-sm btn-outline" onclick="changeCustomersPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>
+        <button class="btn btn-sm btn-outline" onclick="changeCustomersPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>
+        <span style="padding: 0.5rem 1rem; font-size: 0.9rem; color: var(--gray-700);">Page ${currentPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline" onclick="changeCustomersPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>
+        <button class="btn btn-sm btn-outline" onclick="changeCustomersPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+
+  // Add event listeners
   container.querySelectorAll('[data-add-warning]').forEach(btn => {
     btn.addEventListener('click', () => handleAddWarning(btn.dataset.addWarning));
   });
@@ -1477,6 +1776,42 @@ function renderCustomerTable(customers) {
     btn.addEventListener('click', () => openLiftBanModal(btn.dataset.lift));
   });
 }
+
+// Customers handlers
+window.searchCustomers = function(query) {
+  if (customersSearchTimeout) clearTimeout(customersSearchTimeout);
+  customersSearchTimeout = setTimeout(() => {
+    customersState.searchTerm = query;
+    customersState.page = 1;
+    renderCustomerTable();
+  }, 300);
+};
+
+window.changeCustomersSortField = function(field) {
+  customersState.sortBy = field;
+  customersState.page = 1;
+  renderCustomerTable();
+};
+
+window.changeCustomersSortOrder = function(order) {
+  customersState.sortOrder = order;
+  customersState.page = 1;
+  renderCustomerTable();
+};
+
+window.changeCustomersPageSize = function(size) {
+  customersState.pageSize = parseInt(size, 10);
+  customersState.page = 1;
+  renderCustomerTable();
+};
+
+window.changeCustomersPage = function(page) {
+  const totalPages = Math.ceil(customersCache.length / customersState.pageSize) || 1;
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  customersState.page = page;
+  renderCustomerTable();
+};
 
 async function handleAddWarning(userId) {
   const users = await getUsers();
@@ -1620,7 +1955,7 @@ async function openBookingDetail(bookingId) {
       ${booking.isFeatured ? `<span style="background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%); padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-weight: 700; color: #333; display: inline-flex; align-items: center; gap: 0.5rem; box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3); white-space: nowrap;">⭐ FEATURED</span>` : ''}
     </div>
     <p><strong>Booking code:</strong> ${escapeHtml(bookingCode)}</p>
-    <p><strong>Service:</strong> ${escapeHtml(booking.packageName)}${pkg ? ` (${pkg.duration} min)` : ''}</p>
+    <p><strong>Service:</strong> ${escapeHtml(booking.packageName)}${pkg ? ` (${pkg.duration} min)` : ''}${booking.packageId === 'single-service' && booking.singleServices?.length ? ` <span style="color: var(--gray-600); font-size: 0.9rem;">(${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')})</span>` : ''}</p>
     <p><strong>Schedule:</strong> ${formatDate(booking.date)} at ${formatTime(booking.time)}</p>
     <p><strong>Phone:</strong> ${escapeHtml(booking.phone)}</p>
     ${groomerSection}
@@ -1658,7 +1993,7 @@ async function openBookingDetail(bookingId) {
         ${['confirmed', 'completed', 'In Progress'].includes(booking.status) ? `<button class="btn btn-secondary btn-sm" onclick="openMediaModal('${booking.id}')">Add Photos</button>` : ''}
         ${booking.beforeImage && booking.afterImage ? `<button class="btn ${booking.isFeatured ? 'btn-warning' : 'btn-secondary'} btn-sm" onclick="toggleFeature('${booking.id}')">${booking.isFeatured ? '⭐ Featured' : '☆ Feature This'}</button>` : ''}
         
-        ${booking.status !== 'cancelledByAdmin' && booking.status !== 'cancelledByCustomer' && booking.status !== 'completed' && booking.status !== 'In Progress' ? `<button class="btn btn-secondary btn-sm" onclick="openRescheduleModal('${booking.id}')">Reschedule</button>` : ''}
+        ${booking.status !== 'cancelledByAdmin' && booking.status !== 'cancelledByCustomer' && booking.status !== 'In Progress' ? `<button class="btn btn-secondary btn-sm" onclick="openRescheduleModal('${booking.id}')">Reschedule</button>` : ''}
         ${booking.status !== 'cancelledByAdmin' && booking.status !== 'cancelledByCustomer' && booking.status !== 'completed' ? `<button class="btn btn-secondary btn-sm" onclick="openNoShowModal('${booking.id}')">Mark No-show</button>` : ''}
         ${booking.status !== 'cancelledByAdmin' && booking.status !== 'cancelledByCustomer' && booking.status !== 'completed' ? `<button class="btn btn-danger btn-sm" onclick="openCancelModal('${booking.id}')">Cancel</button>` : ''}
         <button class="btn btn-outline btn-sm" onclick="modalSystem.close()">Close</button>
@@ -1775,68 +2110,33 @@ async function openRescheduleModal(bookingId) {
   const booking = bookings.find(b => b.id === bookingId);
   if (!booking) return;
 
-  const packages = await getPackages();
-  const groomers = await getGroomers();
-  const timeSlots = ['9am-12pm', '12pm-3pm', '3pm-6pm']; // 3-hour intervals
+  // Store the booking data for reschedule in sessionStorage
+  const rescheduleData = {
+    isReschedule: true,
+    originalBookingId: booking.id,
+    customerName: booking.customerName,
+    customerEmail: booking.customerEmail,
+    customerPhone: booking.customerPhone,
+    customerAddress: booking.customerAddress,
+    petName: booking.petName,
+    petType: booking.petType,
+    petBreed: booking.petBreed,
+    petAge: booking.petAge,
+    petWeight: booking.petWeight,
+    packageId: booking.packageId,
+    addOns: booking.addOns || [],
+    medicalNotes: booking.medicalNotes,
+    specialInstructions: booking.specialInstructions,
+    groomingNotes: booking.groomingNotes,
+    currentDate: booking.date,
+    currentTime: booking.time,
+    currentGroomerId: booking.groomerId
+  };
 
-  // Ensure packages is an array
-  const pkList = Array.isArray(packages) ? packages : (packages ? Object.values(packages) : []);
-
-  // Filter packages - show all except addons, or filter by pet type if needed
-  const availablePackages = pkList.filter(pkg => {
-    if (pkg.type === 'addon') return false;
-    if (pkg.type === 'any') return true;
-    return !booking.petType || pkg.type === booking.petType;
-  });
-
-  const timeOptions = timeSlots.map(time => `
-    <option value="${time}" ${booking.time === time ? 'selected' : ''}>${time}</option>
-  `).join('');
-
-  const packageOptions = availablePackages.map(pkg => {
-    const minPrice = pkg.tiers && pkg.tiers.length > 0 ? pkg.tiers[0].price : (pkg.price || 0);
-    return `
-      <option value="${pkg.id}" ${booking.packageId === pkg.id ? 'selected' : ''}>
-        ${escapeHtml(pkg.name)} • ${formatCurrency(minPrice)}
-      </option>
-    `;
-  }).join('');
-
-  const groomerOptions = groomers.map(g => `
-    <option value="${g.id}" ${booking.groomerId === g.id ? 'selected' : ''}>${escapeHtml(g.name)}</option>
-  `).join('');
-
-  showModal(`
-    <h3>Reschedule ${escapeHtml(booking.petName)}</h3>
-    <form id="rescheduleForm" onsubmit="handleRescheduleSubmit(event, '${booking.id}')">
-      <div class="form-group">
-        <label class="form-label" for="rescheduleGroomer">Groomer</label>
-        <select id="rescheduleGroomer" class="form-select" required>
-          ${groomerOptions}
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="rescheduleDate">New Date</label>
-        <input type="date" id="rescheduleDate" class="calendar-input" value="${booking.date}" min="${getMinDate()}" required>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="rescheduleTime">Time Slot</label>
-        <select id="rescheduleTime" class="form-select" required>${timeOptions}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="reschedulePackage">Service</label>
-        <select id="reschedulePackage" class="form-select" required>${packageOptions}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="rescheduleNote">Note to customer</label>
-        <textarea id="rescheduleNote" class="form-input" rows="3" placeholder="Optional instructions or reason"></textarea>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-primary" type="submit">Save Changes</button>
-        <button class="btn btn-outline" type="button" onclick="modalSystem.close()">Cancel</button>
-      </div>
-    </form>
-  `);
+  sessionStorage.setItem('rescheduleData', JSON.stringify(rescheduleData));
+  
+  // Redirect to booking page
+  window.location.href = 'booking.html?mode=reschedule';
 }
 
 async function handleRescheduleSubmit(event, bookingId) {
@@ -1990,7 +2290,7 @@ async function loadGalleryView() {
             </div>
           </div>
           <div style="text-align: right;">
-            ${booking.isFeatured ? '<span style="background: var(--accent-color); color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.8rem; display: inline-block;">⭐ Featured</span>' : ''}
+            ${booking.isFeatured ? '<span style="background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%); color: #333; padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; display: inline-block; box-shadow: 0 2px 4px rgba(255,215,0,0.3);">⭐ Featured</span>' : ''}
           </div>
         </div>
 
@@ -2869,7 +3169,7 @@ function renderHistoryActions(bookingId, bookings = []) {
     actions.push(`<button class="btn btn-success btn-sm" onclick="confirmBooking('${bookingId}')">Approve</button>`);
   }
 
-  if (['pending', 'confirmed'].includes(booking.status)) {
+  if (['pending', 'confirmed', 'completed'].includes(booking.status)) {
     actions.push(`<button class="btn btn-secondary btn-sm" onclick="openRescheduleModal('${bookingId}')">Resched</button>`);
   }
 
@@ -3096,6 +3396,13 @@ async function saveBookingFee(bookingId, subtotal) {
   // Calculate amount to pay on arrival (but don't change total)
   booking.cost.amountToPayOnArrival = Math.max(0, subtotal - booking.cost.bookingFee);
 
+  // Auto-confirm if booking is pending and fee is paid
+  const wasConfirmed = booking.status === 'confirmed';
+  if (booking.status === 'pending') {
+    booking.status = 'confirmed';
+    booking.confirmedAt = new Date().toISOString();
+  }
+
   // Save to database
   saveBookings(bookings);
 
@@ -3103,18 +3410,25 @@ async function saveBookingFee(bookingId, subtotal) {
   logBookingHistory({
     bookingId,
     action: 'Booking Fee Added',
-    message: `Booking fee of ${formatCurrency(booking.cost.bookingFee)} added. Amount to pay on visit: ${formatCurrency(booking.cost.amountToPayOnArrival)}`,
+    message: `Booking fee of ${formatCurrency(booking.cost.bookingFee)} added. Amount to pay on visit: ${formatCurrency(booking.cost.amountToPayOnArrival)}${!wasConfirmed && booking.status === 'confirmed' ? '. Booking auto-confirmed.' : ''}`,
     actor: 'Admin'
   });
 
   // Close modal
   modalSystem.close();
 
-  // Refresh the pending bookings view
-  loadPendingBookings();
+  // Refresh the appropriate view
+  if (currentView === 'pending') {
+    loadPendingBookings();
+  } else if (currentView === 'confirmed') {
+    loadConfirmedBookings();
+  } else {
+    loadOverview();
+  }
 
   // Show success message
-  alert(`✅ Booking fee of ${formatCurrency(booking.cost.bookingFee)} added successfully!`);
+  const confirmMsg = !wasConfirmed && booking.status === 'confirmed' ? ' Booking auto-confirmed! ✅' : '';
+  alert(`✅ Booking fee of ${formatCurrency(booking.cost.bookingFee)} added successfully!${confirmMsg}`);
 }
 
 // Make functions globally available
@@ -3536,8 +3850,6 @@ function setupAdminPasswordForm() {
 
 // Make functions globally available
 window.extractPreferredCut = extractPreferredCut;
-window.diagnoseBookingNotes = diagnoseBookingNotes;
-
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
@@ -3861,8 +4173,8 @@ async function handleCompleteService(bookingId) {
   customAlert.confirm('Complete Service', 'Are you sure you want to mark this as done?').then(async (confirmed) => {
     if (!confirmed) return;
 
-    booking.status = 'Completed';
-    booking.completedAt = Date.now();
+    booking.status = 'completed';
+    booking.completedAt = toLocalISO(new Date());
     await saveBookings(bookings);
 
     logBookingHistory({
@@ -4292,142 +4604,40 @@ window.removeCalendarBlackout = removeCalendarBlackout;
 window.cancelBookingForDate = cancelBookingForDate;
 window.getCalendarBlackout = getCalendarBlackout;
 
-// ============================================
-// Search and In Progress Functions
-// ============================================
 
-// Search Confirmed Bookings
-let confirmedBookingsCache = [];
-
-window.searchConfirmedBookings = async function (query) {
-  if (confirmedBookingsCache.length === 0) {
-    confirmedBookingsCache = await getBookings();
-  }
-
-  const confirmed = confirmedBookingsCache.filter(b => b.status === 'confirmed');
-
-  if (!query || query.trim() === '') {
-    renderConfirmedBookingsTable(confirmed);
-    return;
-  }
-
-  const q = query.toLowerCase();
-  const filtered = confirmed.filter(b =>
-    (b.customerName || '').toLowerCase().includes(q) ||
-    (b.petName || '').toLowerCase().includes(q) ||
-    (b.packageName || '').toLowerCase().includes(q) ||
-    (b.email || '').toLowerCase().includes(q) ||
-    (b.phone || '').toLowerCase().includes(q)
-  );
-
-  renderConfirmedBookingsTable(filtered);
-};
-
-// Search Customers
-let customersCache = [];
-
-window.searchCustomers = async function (query) {
-  if (customersCache.length === 0) {
-    customersCache = await getUsers();
-  }
-
-  if (!query || query.trim() === '') {
-    renderCustomerTable(customersCache);
-    return;
-  }
-
-  const q = query.toLowerCase();
-  const filtered = customersCache.filter(u =>
-    (u.name || '').toLowerCase().includes(q) ||
-    (u.email || '').toLowerCase().includes(q) ||
-    (u.phone || '').toLowerCase().includes(q)
-  );
-
-  renderCustomerTable(filtered);
-};
 
 // Search In Progress Bookings
 let inprogressBookingsCache = [];
 
 window.searchInProgressBookings = async function (query) {
-  if (inprogressBookingsCache.length === 0) {
-    const allBookings = await getBookings();
-    inprogressBookingsCache = allBookings.filter(b =>
-      b.status === 'In Progress' || b.status === 'inprogress' || b.status === 'in_progress'
+  if (inprogressSearchTimeout) clearTimeout(inprogressSearchTimeout);
+  inprogressSearchTimeout = setTimeout(async () => {
+    if (inprogressBookingsCache.length === 0) {
+      const allBookings = await getBookings();
+      inprogressBookingsCache = allBookings.filter(b =>
+        b.status === 'In Progress' || b.status === 'inprogress' || b.status === 'in_progress'
+      );
+    }
+
+    // Reset to page 1 on search
+    adminState.inprogressPage = 1;
+
+    if (!query || query.trim() === '') {
+      renderInProgressBookingsTable(inprogressBookingsCache);
+      return;
+    }
+
+    const q = query.toLowerCase();
+    const filtered = inprogressBookingsCache.filter(b =>
+      (b.customerName || '').toLowerCase().includes(q) ||
+      (b.petName || '').toLowerCase().includes(q) ||
+      (b.packageName || '').toLowerCase().includes(q) ||
+      (b.email || '').toLowerCase().includes(q) ||
+      (b.phone || '').toLowerCase().includes(q)
     );
-  }
 
-  if (!query || query.trim() === '') {
-    renderInProgressBookingsTable(inprogressBookingsCache);
-    return;
-  }
-
-  const q = query.toLowerCase();
-  const filtered = inprogressBookingsCache.filter(b =>
-    (b.customerName || '').toLowerCase().includes(q) ||
-    (b.petName || '').toLowerCase().includes(q) ||
-    (b.packageName || '').toLowerCase().includes(q) ||
-    (b.email || '').toLowerCase().includes(q) ||
-    (b.phone || '').toLowerCase().includes(q)
-  );
-
-  renderInProgressBookingsTable(filtered);
-};
-
-// Render In Progress Bookings Table
-window.renderInProgressBookingsTable = function (bookings) {
-  const container = document.getElementById('inprogressBookingsTable');
-  if (!container) return;
-
-  if (!bookings || bookings.length === 0) {
-    container.innerHTML = '<div class="card"><p class="empty-state" style="text-align:center; padding:2rem;">No bookings in progress.</p></div>';
-    return;
-  }
-
-  let html = `
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Date & Time</th>
-            <th>Customer</th>
-            <th>Pet</th>
-            <th>Package</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
-
-  bookings.forEach(booking => {
-    const statusClass = 'badge-inprogress';
-    html += `
-      <tr>
-        <td>${formatDate(booking.date)} · ${formatTime(booking.time)}</td>
-        <td>${escapeHtml(booking.customerName || 'N/A')}</td>
-        <td>${escapeHtml(booking.petName || 'N/A')}</td>
-        <td>${escapeHtml(booking.packageName || 'N/A')}</td>
-        <td><span class="badge ${statusClass}">In Progress</span></td>
-        <td>
-          <button class="btn btn-success btn-sm" onclick="completeBooking('${booking.id}')">
-            ✓ Complete
-          </button>
-          <button class="btn btn-outline btn-sm" onclick="openBookingDetail('${booking.id}')">
-            View
-          </button>
-        </td>
-      </tr>
-    `;
-  });
-
-  html += `
-        </tbody>
-      </table>
-    </div>
-  `;
-
-  container.innerHTML = html;
+    renderInProgressBookingsTable(filtered);
+  }, 300);
 };
 
 // Load In Progress Bookings
@@ -4487,7 +4697,7 @@ document.addEventListener('click', function (event) {
   }
 });
 
-// Updated In Progress Table with Actions Dropdown
+// Updated In Progress Table with Actions Dropdown, Sorting, and Pagination
 window.renderInProgressBookingsTable = function (bookings) {
   const container = document.getElementById('inprogressBookingsTable');
   if (!container) return;
@@ -4497,7 +4707,107 @@ window.renderInProgressBookingsTable = function (bookings) {
     return;
   }
 
+  // Apply search filter first
+  let filteredBookings = [...bookings];
+  if (adminState.inprogressSearchTerm) {
+    const q = adminState.inprogressSearchTerm.toLowerCase();
+    filteredBookings = filteredBookings.filter(b =>
+      (b.customerName || '').toLowerCase().includes(q) ||
+      (b.petName || '').toLowerCase().includes(q) ||
+      (b.packageName || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (filteredBookings.length === 0) {
+    const message = adminState.inprogressSearchTerm 
+      ? `No results found for "${adminState.inprogressSearchTerm}". Try a different search term.`
+      : 'No bookings in progress.';
+    container.innerHTML = `
+      <div class="search-bar" style="margin-bottom: 1rem;">
+        <input type="text" class="search-input" placeholder="🔍 Search by customer, pet, or package..."
+          onkeyup="searchInProgressBookings(this.value)">
+      </div>
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">🔄</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${adminState.inprogressSearchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+      </div>
+    `;
+    return;
+  }
+
+  // Apply sorting
+  const sortedBookings = [...filteredBookings];
+  const sortBy = adminState.inprogressSortBy || 'date';
+  const sortOrder = adminState.inprogressSortOrder || 'asc';
+
+  sortedBookings.sort((a, b) => {
+    let valA, valB;
+    switch (sortBy) {
+      case 'customer':
+        valA = (a.customerName || '').toLowerCase();
+        valB = (b.customerName || '').toLowerCase();
+        break;
+      case 'package':
+        valA = (a.packageName || '').toLowerCase();
+        valB = (b.packageName || '').toLowerCase();
+        break;
+      case 'date':
+      default:
+        valA = new Date(a.date + ' ' + (a.time || '00:00'));
+        valB = new Date(b.date + ' ' + (b.time || '00:00'));
+        break;
+    }
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Pagination
+  const pageSize = adminState.inprogressPageSize || 5;
+  const currentPage = adminState.inprogressPage || 1;
+  const totalItems = sortedBookings.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const paginatedBookings = sortedBookings.slice(startIndex, endIndex);
+
+  // Build HTML with controls
   let html = `
+    <div class="search-bar" style="margin-bottom: 1rem;">
+      <input type="text" class="search-input" placeholder="🔍 Search by customer, pet, or package..."
+        value="${adminState.inprogressSearchTerm || ''}" onkeyup="searchInProgressBookings(this.value)">
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
+        <select id="inprogressPageSize" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeInprogressPageSize(this.value)">
+          <option value="5" ${pageSize === 5 ? 'selected' : ''}>5</option>
+          <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${pageSize === 50 ? 'selected' : ''}>50</option>
+        </select>
+        <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
+      </div>
+      <div style="font-size: 0.9rem; color: var(--gray-600);">
+        Showing ${startIndex + 1} to ${endIndex} of ${totalItems}
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm);">
+      <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
+      <select id="inprogressSortField" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeInprogressSortField(this.value)">
+        <option value="date" ${sortBy === 'date' ? 'selected' : ''}>Date</option>
+        <option value="customer" ${sortBy === 'customer' ? 'selected' : ''}>Customer</option>
+        <option value="package" ${sortBy === 'package' ? 'selected' : ''}>Package</option>
+      </select>
+      <select id="inprogressSortOrder" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeInprogressSortOrder(this.value)">
+        <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Ascending</option>
+        <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Descending</option>
+      </select>
+    </div>
+
     <div class="table-container">
       <table>
         <thead>
@@ -4513,14 +4823,14 @@ window.renderInProgressBookingsTable = function (bookings) {
         <tbody>
     `;
 
-  bookings.forEach(booking => {
+  paginatedBookings.forEach(booking => {
     const statusClass = 'badge-inprogress';
     html += `
       <tr>
         <td>${formatDate(booking.date)} · ${formatTime(booking.time)}</td>
         <td>${escapeHtml(booking.customerName || 'N/A')}</td>
         <td>${escapeHtml(booking.petName || 'N/A')}</td>
-        <td>${escapeHtml(booking.packageName || 'N/A')}</td>
+        <td>${escapeHtml(booking.packageName || 'N/A')}${booking.packageId === 'single-service' && booking.singleServices?.length ? `<br><span style="font-size: 0.8rem; color: var(--gray-600);">${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')}</span>` : ''}</td>
         <td><span class="badge ${statusClass}">In Progress</span></td>
         <td>
           <div class="actions-dropdown">
@@ -4545,97 +4855,52 @@ window.renderInProgressBookingsTable = function (bookings) {
     </div>
     `;
 
+  // Pagination controls
+  if (totalPages > 1) {
+    html += `
+      <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn btn-sm btn-outline" onclick="changeInprogressPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>
+        <button class="btn btn-sm btn-outline" onclick="changeInprogressPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>
+        <span style="padding: 0.5rem 1rem; font-size: 0.9rem; color: var(--gray-700);">Page ${currentPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline" onclick="changeInprogressPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>
+        <button class="btn btn-sm btn-outline" onclick="changeInprogressPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>
+      </div>
+    `;
+  }
+
   container.innerHTML = html;
+};
+
+// In Progress sorting and pagination handlers
+window.changeInprogressSortField = function (field) {
+  adminState.inprogressSortBy = field;
+  adminState.inprogressPage = 1;
+  loadInProgressBookings();
+};
+
+window.changeInprogressSortOrder = function (order) {
+  adminState.inprogressSortOrder = order;
+  adminState.inprogressPage = 1;
+  loadInProgressBookings();
+};
+
+window.changeInprogressPageSize = function (size) {
+  adminState.inprogressPageSize = parseInt(size, 10);
+  adminState.inprogressPage = 1;
+  loadInProgressBookings();
+};
+
+window.changeInprogressPage = function (page) {
+  const totalItems = inprogressBookingsCache.length;
+  const totalPages = Math.ceil(totalItems / adminState.inprogressPageSize) || 1;
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  adminState.inprogressPage = page;
+  renderInProgressBookingsTable(inprogressBookingsCache);
 };
 
 // Updated Confirmed Bookings Table with Actions Dropdown
-window.renderConfirmedBookingsTableWithDropdown = function (bookings) {
-  const container = document.getElementById('confirmedBookingsTable');
-  if (!container) return;
 
-  if (!bookings || bookings.length === 0) {
-    container.innerHTML = '<div class="card"><p class="empty-state" style="text-align:center; padding:2rem;">No confirmed bookings.</p></div>';
-    return;
-  }
-
-  // Double check strict filter just in case
-  const confirmedOnly = bookings.filter(b => b.status === 'confirmed');
-
-  if (confirmedOnly.length === 0) {
-    container.innerHTML = '<div class="card"><p class="empty-state" style="text-align:center; padding:2rem;">No confirmed bookings found.</p></div>';
-    return;
-  }
-
-  let html = `
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Date & Time</th>
-            <th>Customer</th>
-            <th>Pet</th>
-            <th>Package</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-    `;
-
-  confirmedOnly.forEach(booking => {
-    const status = 'Confirmed';
-    const statusClass = 'badge-confirmed';
-
-    html += `
-      <tr>
-        <td>${formatDate(booking.date)} · ${formatTime(booking.time)}</td>
-        <td>${escapeHtml(booking.customerName || 'N/A')}</td>
-        <td>${escapeHtml(booking.petName || 'N/A')}</td>
-        <td>${escapeHtml(booking.packageName || 'N/A')}</td>
-        <td><span class="badge ${statusClass}">${status}</span></td>
-        <td>
-          <div class="action-dropdown" style="position: relative; display: inline-block;">
-            <button class="btn btn-primary btn-sm" onclick="toggleActionDropdown(this)">
-              Actions ▼
-            </button>
-            <div class="action-dropdown-menu" style="position: absolute; top: 100%; right: 0; background: white; border: 1px solid var(--gray-300); border-radius: var(--radius-sm); box-shadow: var(--shadow); z-index: 10; min-width: 150px;">
-              <button class="action-dropdown-item" onclick="handleStartService('${booking.id}'); closeActionDropdown(this)">
-                ▶️ Start Service
-              </button>
-              <button class="action-dropdown-item" onclick="openBookingDetail('${booking.id}'); closeActionDropdown(this)">
-                👁️ View
-              </button>
-              <button class="action-dropdown-item" onclick="openCancelModal('${booking.id}'); closeActionDropdown(this)">
-                ❌ Cancel
-              </button>
-              <button class="action-dropdown-item" onclick="modalSystem.close(); closeActionDropdown(this)">
-                ✕ Close
-              </button>
-            </div>
-          </div>
-        </td>
-      </tr>
-    `;
-  });
-
-  html += `
-        </tbody>
-      </table>
-    </div>
-    `;
-
-  container.innerHTML = html;
-};
-
-// Call the new version from the existing function
-const originalRenderConfirmed = window.renderConfirmedBookingsTable;
-window.renderConfirmedBookingsTable = function (bookings) {
-  if (typeof renderConfirmedBookingsTableWithDropdown === 'function') {
-    renderConfirmedBookingsTableWithDropdown(bookings);
-  } else {
-    originalRenderConfirmed(bookings);
-  }
-};
 
 // Add-ons Management Modal (removed duplicate - see openAddonsModal below)
 
@@ -4857,34 +5122,44 @@ window.openAddonsModal = async function (bookingId) {
         `).join('')
     : `<p style="color:#9ca3af;text-align:center;font-style:italic;padding:1rem;">No add-ons yet.</p>`;
 
-  // Use subtotal (base price without add-ons) for remaining balance calculation
-  // subtotal is the package price at booking time
-  const basePrice = booking.cost?.subtotal || booking.cost?.packagePrice || booking.totalPrice || 0;
-  // Use booking fee if available, otherwise assume standard 100 or 200 peso fee
+  // Calculate prices
+  const packagePrice = booking.cost?.packagePrice || booking.totalPrice || 0;
+  const addOnsTotal = booking.addOns?.reduce((sum, a) => sum + (a.price || 0), 0) || 0;
+  const subtotal = packagePrice + addOnsTotal;
   const bookingFee = booking.cost?.bookingFee || booking.bookingFee || 0;
-  const remainingBalance = Math.max(0, basePrice - bookingFee);
+  const remainingBalance = Math.max(0, subtotal - bookingFee);
 
   // Create content as HTML element instead of string
   const contentElement = document.createElement('div');
   
-  // Display booking fee info at the top
-  const isPaidStatus = ['confirmed', 'completed', 'inProgress'].includes(booking.status);
-  const bookingFeeDisplay = bookingFee > 0 ? `
-    <div style="background:${isPaidStatus ? '#e8f5e9' : '#fff3e0'};padding:1rem;border-radius:10px;margin-bottom:1.5rem;border-left:4px solid ${isPaidStatus ? '#2e7d32' : '#ff9800'};">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span style="font-weight:600;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">Booking Fee ${isPaidStatus ? '(Paid)' : '(To Pay)'}</span>
-        <span style="font-size:1.1rem;font-weight:700;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">- ${formatCurrency(bookingFee)}</span>
+  // Display price breakdown at the top (correct order: Package -> Add-ons -> Subtotal -> Fee -> Balance)
+  const isPaidStatus = ['confirmed', 'completed', 'inProgress', 'in progress'].includes((booking.status || '').toLowerCase());
+  const priceBreakdownDisplay = `
+    <div style="background:#f9fafb;padding:1rem;border-radius:10px;margin-bottom:1.5rem;border:1px solid #e5e7eb;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <span style="font-weight:500;color:#374151;">Package Price</span>
+        <span style="font-weight:600;color:#111827;">${formatCurrency(packagePrice)}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #c8e6c9;">
-        <span style="font-weight:600;color:#111827;">Base Price</span>
-        <span style="font-size:1.1rem;font-weight:700;color:#111827;">${formatCurrency(basePrice)}</span>
+      ${addOnsTotal > 0 ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+          <span style="font-weight:500;color:#374151;">Add-ons Total</span>
+          <span style="font-weight:600;color:#111827;">${formatCurrency(addOnsTotal)}</span>
+        </div>
+      ` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:0.5rem;border-top:1px solid #e5e7eb;">
+        <span style="font-weight:600;color:#111827;">Subtotal</span>
+        <span style="font-weight:700;color:#111827;">${formatCurrency(subtotal)}</span>
       </div>
+      ${bookingFee > 0 ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;padding:0.5rem;background:${isPaidStatus ? '#e8f5e9' : '#fff3e0'};border-radius:6px;">
+          <span style="font-weight:500;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">Booking Fee ${isPaidStatus ? '(Paid)' : '(To Pay)'}</span>
+          <span style="font-weight:600;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">- ${formatCurrency(bookingFee)}</span>
+        </div>
+      ` : ''}
     </div>
-  ` : '';
+  `;
   
   contentElement.innerHTML = `
-    ${bookingFeeDisplay}
-    
     <div style="display:flex;gap:0.75rem;margin-bottom:1.2rem;">
       <select id="addonSelect-${bookingId}" 
         style="flex:1;padding:0.7rem 1rem;border:1px solid #d1d5db;border-radius:10px;font-size:0.95rem;">
@@ -4897,6 +5172,8 @@ window.openAddonsModal = async function (bookingId) {
     </div>
 
     ${currentAddons}
+
+    ${priceBreakdownDisplay}
 
     <div style="text-align:right;margin-top:1rem;border-top:2px solid #e5e7eb;padding-top:1rem;">
       <span style="font-size:1.15rem;font-weight:700;color:#111827;">
@@ -4923,7 +5200,7 @@ window.openAddonsModal = async function (bookingId) {
   }
 };
 
-// OPEN BOOKING VIEW MODAL (No Add-ons)
+// OPEN BOOKING VIEW MODAL (with Price and Actions)
 window.openSimpleBookingView = async function (bookingId) {
   const bookings = await getBookings();
   const booking = bookings.find(b => b.id === bookingId);
@@ -4933,82 +5210,135 @@ window.openSimpleBookingView = async function (bookingId) {
     ? getBookingDisplayCode(booking)
     : booking.id;
 
+  // Calculate prices
+  const cost = booking.cost || {};
+  const packagePrice = cost.packagePrice || booking.totalPrice || 0;
+  const addOnsTotal = booking.addOns?.reduce((sum, a) => sum + (a.price || 0), 0) || 0;
+  const subtotal = packagePrice + addOnsTotal;
+  const bookingFee = cost.bookingFee || 0;
+  const statusLower = (booking.status || '').toLowerCase();
+  const isPaidStatus = ['confirmed', 'completed', 'inprogress', 'in progress'].includes(statusLower);
+  const remainingBalance = isPaidStatus ? Math.max(0, subtotal - bookingFee) : subtotal;
+
+  // Status badge
+  const statusClass = statusLower === 'completed' ? 'badge-completed' : 
+                      statusLower === 'confirmed' ? 'badge-confirmed' :
+                      statusLower.includes('progress') ? 'badge-inprogress' :
+                      statusLower.includes('cancel') ? 'badge-cancelled' : 'badge-pending';
+
   const modal = `
-        <div class="modal-overlay" onclick="modalSystem.close()" 
-            style="background:rgba(0,0,0,0.5);">
+        <div class="modal-overlay" onclick="closeSimpleModal()" 
+            style="background:rgba(0,0,0,0.5);position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;">
             
             <div class="modal-content" onclick="event.stopPropagation()"
-                style="max-width:520px;background:white;border-radius:14px;
+                style="max-width:520px;width:90%;background:white;border-radius:14px;
                 box-shadow:0 20px 30px rgba(0,0,0,0.12);">
 
                 <!-- Header -->
-                <div style="padding:1.75rem 2rem;border-bottom:1px solid #e5e7eb;
+                <div style="padding:1.5rem 2rem;border-bottom:1px solid #e5e7eb;
                     display:flex;justify-content:space-between;align-items:center;">
                     
-                    <h2 style="margin:0;font-size:1.5rem;font-weight:700;color:#111827;">
+                    <h2 style="margin:0;font-size:1.35rem;font-weight:700;color:#111827;">
                         ${escapeHtml(booking.customerName)} · ${escapeHtml(booking.petName)}
                     </h2>
 
-                    <button onclick="modalSystem.close()" 
-                        style="background:transparent;border:none;font-size:2rem;
+                    <button onclick="closeSimpleModal()" 
+                        style="background:transparent;border:none;font-size:1.75rem;
                         color:#9ca3af;cursor:pointer;line-height:1;">
                         ×
                     </button>
                 </div>
 
                 <!-- Body -->
-                <div style="padding:2rem;max-height:70vh;overflow-y:auto;">
+                <div style="padding:1.5rem 2rem;max-height:60vh;overflow-y:auto;">
                     
-                    <div style="display:grid;gap:1rem;font-size:1rem;">
+                    <div style="display:grid;gap:0.75rem;font-size:0.95rem;">
 
-                        <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
                             <strong style="color:#6b7280;">Booking Code:</strong>
-                            <span style="color:#111827;font-weight:500;">
-                                ${bookingCode}
-                            </span>
+                            <span style="color:#111827;font-weight:600;">${bookingCode}</span>
                         </div>
 
-                        <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
                             <strong style="color:#6b7280;">Service:</strong>
                             <span style="color:#111827;font-weight:500;">
-                                🐾 ${escapeHtml(booking.packageName)}
+                                ${escapeHtml(booking.packageName)}${booking.packageId === 'single-service' && booking.singleServices?.length ? ` (${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')})` : ''}
                             </span>
                         </div>
 
-                        <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
                             <strong style="color:#6b7280;">Schedule:</strong>
                             <span style="color:#111827;font-weight:500;">
                                 ${formatDate(booking.date)} at ${formatTime(booking.time)}
                             </span>
                         </div>
 
-                        <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
                             <strong style="color:#6b7280;">Phone:</strong>
-                            <span style="color:#111827;font-weight:500;">
-                                ${escapeHtml(booking.phone || "N/A")}
-                            </span>
+                            <span style="color:#111827;font-weight:500;">${escapeHtml(booking.phone || "N/A")}</span>
                         </div>
 
                         ${booking.groomerId ? `
-                        <div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
                             <strong style="color:#6b7280;">Groomer:</strong>
-                            <span style="background:#d1fae5;padding:0.4rem 0.75rem;
-                                border-radius:8px;color:#065f46;font-weight:600;">
+                            <span style="background:#d1fae5;padding:0.3rem 0.6rem;border-radius:6px;color:#065f46;font-weight:600;">
                                 ${escapeHtml(booking.groomerName)}
                             </span>
                         </div>` : ""}
+
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <strong style="color:#6b7280;">Status:</strong>
+                            <span class="badge ${statusClass}">${escapeHtml(booking.status)}</span>
+                        </div>
+                    </div>
+
+                    <!-- Price Breakdown -->
+                    <div style="background:#f9fafb;padding:1rem;border-radius:10px;margin-top:1rem;border:1px solid #e5e7eb;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">
+                            <span style="color:#374151;">Package Price</span>
+                            <span style="font-weight:600;">${formatCurrency(packagePrice)}</span>
+                        </div>
+                        ${addOnsTotal > 0 ? `
+                        <div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">
+                            <span style="color:#374151;">Add-ons</span>
+                            <span style="font-weight:600;">${formatCurrency(addOnsTotal)}</span>
+                        </div>` : ''}
+                        <div style="display:flex;justify-content:space-between;padding-top:0.4rem;border-top:1px solid #e5e7eb;">
+                            <span style="font-weight:600;">Subtotal</span>
+                            <span style="font-weight:700;">${formatCurrency(subtotal)}</span>
+                        </div>
+                        ${bookingFee > 0 ? `
+                        <div style="display:flex;justify-content:space-between;margin-top:0.4rem;padding:0.4rem;background:${isPaidStatus ? '#e8f5e9' : '#fff3e0'};border-radius:6px;">
+                            <span style="color:${isPaidStatus ? '#2e7d32' : '#e65100'};">Booking Fee ${isPaidStatus ? '(Paid)' : '(To Pay)'}</span>
+                            <span style="font-weight:600;color:${isPaidStatus ? '#2e7d32' : '#e65100'};">- ${formatCurrency(bookingFee)}</span>
+                        </div>` : ''}
+                        <div style="display:flex;justify-content:space-between;margin-top:0.5rem;padding:0.5rem;background:#e8f5e9;border-radius:6px;">
+                            <span style="font-weight:700;color:#2e7d32;">Remaining Balance</span>
+                            <span style="font-weight:700;color:#2e7d32;font-size:1.1rem;">${formatCurrency(remainingBalance)}</span>
+                        </div>
                     </div>
 
                 </div>
 
-                <!-- Footer -->
-                <div style="padding:1.4rem 2rem;border-top:1px solid #e5e7eb;
-                    display:flex;justify-content:flex-end;">
-                    
-                    <button onclick="modalSystem.close()" 
-                        style="padding:0.65rem 1.5rem;background:white;color:#374151;
-                        border:1px solid #d1d5db;border-radius:10px;font-weight:600;
-                        cursor:pointer;font-size:0.95rem;">
+                <!-- Footer with Actions -->
+                <div style="padding:1rem 2rem;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+                        ${statusLower === 'completed' || statusLower.includes('cancel') ? '' : `
+                            <button onclick="closeSimpleModal(); openRescheduleModal('${bookingId}')" 
+                                style="padding:0.5rem 1rem;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;border-radius:8px;font-weight:500;cursor:pointer;">
+                                🔄 Reschedule
+                            </button>
+                        `}
+                        ${statusLower === 'completed' || statusLower.includes('cancel') ? '' : `
+                            <button onclick="closeSimpleModal(); openCancelModal('${bookingId}')" 
+                                style="padding:0.5rem 1rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;font-weight:500;cursor:pointer;">
+                                ✖ Cancel
+                            </button>
+                        `}
+                    </div>
+                    <button onclick="closeSimpleModal()" 
+                        style="padding:0.5rem 1.25rem;background:white;color:#374151;
+                        border:1px solid #d1d5db;border-radius:8px;font-weight:600;cursor:pointer;">
                         Close
                     </button>
                 </div>
@@ -5017,7 +5347,22 @@ window.openSimpleBookingView = async function (bookingId) {
         </div>
     `;
 
-  document.getElementById('modalRoot').innerHTML = modal;
+  // Use modalRoot if exists, otherwise create one
+  let modalRoot = document.getElementById('modalRoot');
+  if (!modalRoot) {
+    modalRoot = document.createElement('div');
+    modalRoot.id = 'modalRoot';
+    document.body.appendChild(modalRoot);
+  }
+  modalRoot.innerHTML = modal;
+};
+
+// Close simple modal helper
+window.closeSimpleModal = function() {
+  const modalRoot = document.getElementById('modalRoot');
+  if (modalRoot) {
+    modalRoot.innerHTML = '';
+  }
 };
 
 // ==================== BOOKING HISTORY ====================
@@ -5047,17 +5392,132 @@ window.loadBookingHistory = async function () {
   renderBookingHistoryTable(historyBookings);
 };
 
-// Render booking history table with Actions dropdown
+// Booking History state for the bookinghistoryView
+let bookingHistoryCache = [];
+let bookingHistorySearchTimeout = null;
+let bookingHistoryState = {
+  page: 1,
+  pageSize: 5,
+  sortBy: 'date',
+  sortOrder: 'desc',
+  searchTerm: ''
+};
+
+// Render booking history table with Actions dropdown, sorting, and pagination
 window.renderBookingHistoryTable = function (bookings) {
   const container = document.getElementById('bookingHistoryTableContainer');
   if (!container) return;
 
-  if (!bookings || bookings.length === 0) {
-    container.innerHTML = '<p style="padding: 2rem; text-align: center; color: #9ca3af;">No booking history yet.</p>';
+  // Cache the bookings for pagination
+  if (bookings) {
+    bookingHistoryCache = bookings;
+  }
+
+  let filteredBookings = [...bookingHistoryCache];
+
+  // Apply search filter
+  if (bookingHistoryState.searchTerm) {
+    const q = bookingHistoryState.searchTerm.toLowerCase();
+    filteredBookings = filteredBookings.filter(b =>
+      (b.customerName || '').toLowerCase().includes(q) ||
+      (b.petName || '').toLowerCase().includes(q) ||
+      (b.packageName || '').toLowerCase().includes(q) ||
+      (b.status || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (filteredBookings.length === 0) {
+    const message = bookingHistoryState.searchTerm 
+      ? `No results found for "${bookingHistoryState.searchTerm}". Try a different search term.`
+      : 'No booking history available yet.';
+    container.innerHTML = `
+      <div style="padding: 3rem 2rem; text-align: center; background: #f9fafb; border-radius: var(--radius); border: 2px dashed var(--gray-300);">
+        <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📋</div>
+        <p style="color: var(--gray-700); font-size: 1.1rem; margin-bottom: 0.5rem; font-weight: 500;">${message}</p>
+        ${bookingHistoryState.searchTerm ? `<p style="color: var(--gray-600); font-size: 0.9rem;">Clear the search to see all bookings.</p>` : ''}
+      </div>
+    `;
     return;
   }
 
+  // Apply sorting
+  const sortBy = bookingHistoryState.sortBy || 'date';
+  const sortOrder = bookingHistoryState.sortOrder || 'desc';
+
+  filteredBookings.sort((a, b) => {
+    let valA, valB;
+    switch (sortBy) {
+      case 'customer':
+        valA = (a.customerName || '').toLowerCase();
+        valB = (b.customerName || '').toLowerCase();
+        break;
+      case 'status':
+        valA = (a.status || '').toLowerCase();
+        valB = (b.status || '').toLowerCase();
+        break;
+      case 'amount':
+        valA = a.totalPrice || a.cost?.subtotal || 0;
+        valB = b.totalPrice || b.cost?.subtotal || 0;
+        break;
+      case 'date':
+      default:
+        valA = new Date(a.date + ' ' + (a.time || '00:00'));
+        valB = new Date(b.date + ' ' + (b.time || '00:00'));
+        break;
+    }
+    if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  // Pagination
+  const pageSize = bookingHistoryState.pageSize || 5;
+  const currentPage = bookingHistoryState.page || 1;
+  const totalItems = filteredBookings.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const paginatedBookings = filteredBookings.slice(startIndex, endIndex);
+
+  // Build HTML with controls
   let html = `
+    <div class="search-bar" style="margin-bottom: 1rem;">
+      <input type="text" id="bookingHistorySearch" class="search-input"
+        placeholder="🔍 Search by customer name, pet name, package, or status..."
+        value="${bookingHistoryState.searchTerm || ''}"
+        onkeyup="searchBookingHistory(this.value)">
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Show:</label>
+        <select id="bookingHistoryPageSize" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeBookingHistoryPageSize(this.value)">
+          <option value="5" ${pageSize === 5 ? 'selected' : ''}>5</option>
+          <option value="10" ${pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="20" ${pageSize === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${pageSize === 50 ? 'selected' : ''}>50</option>
+        </select>
+        <span style="font-size: 0.9rem; color: var(--gray-600);">entries</span>
+      </div>
+      <div style="font-size: 0.9rem; color: var(--gray-600);">
+        Showing ${startIndex + 1} to ${endIndex} of ${totalItems}
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 0.5rem; background: var(--gray-50); border-radius: var(--radius-sm);">
+      <label style="font-size: 0.9rem; color: var(--gray-600); font-weight: 500;">Sort by:</label>
+      <select id="bookingHistorySortField" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeBookingHistorySortField(this.value)">
+        <option value="date" ${sortBy === 'date' ? 'selected' : ''}>Date</option>
+        <option value="customer" ${sortBy === 'customer' ? 'selected' : ''}>Customer</option>
+        <option value="status" ${sortBy === 'status' ? 'selected' : ''}>Status</option>
+        <option value="amount" ${sortBy === 'amount' ? 'selected' : ''}>Amount</option>
+      </select>
+      <select id="bookingHistorySortOrder" class="form-select" style="width: auto; padding: 0.5rem;" onchange="changeBookingHistorySortOrder(this.value)">
+        <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+        <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
+      </select>
+    </div>
+
     <div class="table-wrapper">
       <table class="admin-table">
         <thead>
@@ -5074,10 +5534,10 @@ window.renderBookingHistoryTable = function (bookings) {
         <tbody>
   `;
 
-  bookings.forEach(booking => {
+  paginatedBookings.forEach(booking => {
     const statusLower = (booking.status || '').toLowerCase();
     const isCancelled = statusLower === 'cancelled' || statusLower === 'cancelledbycustomer' || statusLower === 'cancelledbyadmin';
-    const statusClass = booking.status === 'completed' ? 'badge-completed' :
+    const statusClass = statusLower === 'completed' ? 'badge-completed' :
       isCancelled ? 'badge-cancelled' : 'badge-noshow';
     const statusText = isCancelled ? 'Cancelled' : (booking.status.charAt(0).toUpperCase() + booking.status.slice(1).replace('-', ' '));
     const totalPrice = booking.totalPrice || booking.cost?.subtotal || 0;
@@ -5090,7 +5550,7 @@ window.renderBookingHistoryTable = function (bookings) {
         <td>${formatDate(booking.date)} · ${formatTime(booking.time)}</td>
         <td>${escapeHtml(booking.customerName || 'N/A')}</td>
         <td>${escapeHtml(booking.petName || 'N/A')}</td>
-        <td>${escapeHtml(booking.packageName || 'N/A')}</td>
+        <td>${escapeHtml(booking.packageName || 'N/A')}${booking.packageId === 'single-service' && booking.singleServices?.length ? `<br><span style="font-size: 0.8rem; color: var(--gray-600);">${booking.singleServices.map(id => getSingleServiceLabel(id)).join(', ')}</span>` : ''}</td>
         <td>${priceButton}</td>
         <td><span class="badge ${statusClass}">${statusText}</span></td>
         <td>
@@ -5112,7 +5572,84 @@ window.renderBookingHistoryTable = function (bookings) {
     </div>
   `;
 
+  // Pagination controls
+  if (totalPages > 1) {
+    html += `
+      <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+        <button class="btn btn-sm btn-outline" onclick="changeBookingHistoryPage(1)" ${currentPage === 1 ? 'disabled' : ''}>«</button>
+        <button class="btn btn-sm btn-outline" onclick="changeBookingHistoryPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>
+        <span style="padding: 0.5rem 1rem; font-size: 0.9rem; color: var(--gray-700);">Page ${currentPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-outline" onclick="changeBookingHistoryPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>
+        <button class="btn btn-sm btn-outline" onclick="changeBookingHistoryPage(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''}>»</button>
+      </div>
+    `;
+  }
+
   container.innerHTML = html;
+};
+
+// Booking History sorting and pagination handlers
+window.searchBookingHistory = async function (query) {
+  // Clear previous timeout
+  if (bookingHistorySearchTimeout) {
+    clearTimeout(bookingHistorySearchTimeout);
+  }
+  
+  // Set new timeout - wait 300ms after user stops typing
+  bookingHistorySearchTimeout = setTimeout(async () => {
+    bookingHistoryState.searchTerm = query;
+    bookingHistoryState.page = 1;
+    
+    // If cache is empty, load the data first
+    if (bookingHistoryCache.length === 0) {
+      try {
+        const bookings = await getBookings();
+        const historyBookings = bookings.filter(b => {
+          const status = (b.status || '').toLowerCase();
+          const isCancelled = status === 'cancelled' || status === 'cancelledbycustomer' || status === 'cancelledbyadmin';
+          if (status === 'completed') return true;
+          if (status === 'no-show') return true;
+          if (isCancelled && (b.previousStatus === 'confirmed' || b.previousStatus === 'inProgress' || b.wasConfirmed)) {
+            return true;
+          }
+          return false;
+        });
+        bookingHistoryCache = historyBookings;
+      } catch (e) {
+        console.error('Error loading booking history:', e);
+        return;
+      }
+    }
+    
+    renderBookingHistoryTable();
+  }, 300);
+};
+
+window.changeBookingHistorySortField = function (field) {
+  bookingHistoryState.sortBy = field;
+  bookingHistoryState.page = 1;
+  renderBookingHistoryTable();
+};
+
+window.changeBookingHistorySortOrder = function (order) {
+  bookingHistoryState.sortOrder = order;
+  bookingHistoryState.page = 1;
+  renderBookingHistoryTable();
+};
+
+window.changeBookingHistoryPageSize = function (size) {
+  bookingHistoryState.pageSize = parseInt(size, 10);
+  bookingHistoryState.page = 1;
+  renderBookingHistoryTable();
+};
+
+window.changeBookingHistoryPage = function (page) {
+  const totalItems = bookingHistoryCache.length;
+  const totalPages = Math.ceil(totalItems / bookingHistoryState.pageSize) || 1;
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  bookingHistoryState.page = page;
+  renderBookingHistoryTable();
 };
 
 // Open reschedule modal
@@ -5121,64 +5658,36 @@ window.openRescheduleModal = async function (bookingId) {
   const booking = bookings.find(b => b.id === bookingId);
   if (!booking) return;
 
-  const packages = await getPackages();
-  const servicePackages = packages.filter(p => p.type === 'service');
+  console.log('Booking data for reschedule:', booking); // Debug log
 
-  let serviceOptions = '';
-  servicePackages.forEach(pkg => {
-    const selected = pkg.id === booking.packageId ? 'selected' : '';
-    serviceOptions += `<option value="${pkg.id}" ${selected}>${pkg.name}</option>`;
-  });
+  // Store the booking data for reschedule in sessionStorage
+  const rescheduleData = {
+    isReschedule: true,
+    originalBookingId: booking.id,
+    customerName: booking.customerName,
+    customerEmail: booking.profile?.ownerEmail || booking.customerEmail || '',
+    customerPhone: booking.phone || booking.customerPhone || '',
+    customerAddress: booking.profile?.ownerAddress || booking.customerAddress || '',
+    petName: booking.petName,
+    petType: booking.petType,
+    petBreed: booking.profile?.petBreed || booking.petBreed || '',
+    petAge: booking.profile?.petAge || booking.petAge || '',
+    petWeight: booking.petWeight || booking.profile?.petWeight || '',
+    packageId: booking.packageId,
+    addOns: booking.addOns || [],
+    medicalNotes: booking.profile?.medicalNotes || booking.medicalNotes || '',
+    specialInstructions: booking.bookingNotes || booking.specialInstructions || '',
+    groomingNotes: booking.groomingNotes || '',
+    currentDate: booking.date,
+    currentTime: booking.time,
+    currentGroomerId: booking.groomerId
+  };
 
-  const modalContent = `
-    <div style="padding:2rem;">
-      <div style="margin-bottom:1.5rem;">
-        <label style="display:block;margin-bottom:0.5rem;font-weight:600;color:#374151;">Customer</label>
-        <input type="text" value="${escapeHtml(booking.customerName)} · ${escapeHtml(booking.petName)}" disabled style="width:100%;padding:0.75rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;">
-      </div>
-
-      <div style="margin-bottom:1.5rem;">
-        <label style="display:block;margin-bottom:0.5rem;font-weight:600;color:#374151;">Service/Package</label>
-        <select id="reschedule-service-${bookingId}" style="width:100%;padding:0.75rem;border:1px solid #d1d5db;border-radius:8px;">
-          ${serviceOptions}
-        </select>
-      </div>
-
-      <div style="margin-bottom:1.5rem;">
-        <label style="display:block;margin-bottom:0.5rem;font-weight:600;color:#374151;">New Date</label>
-        <input type="date" id="reschedule-date-${bookingId}" value="${booking.date}" style="width:100%;padding:0.75rem;border:1px solid #d1d5db;border-radius:8px;">
-      </div>
-
-      <div style="margin-bottom:1.5rem;">
-        <label style="display:block;margin-bottom:0.5rem;font-weight:600;color:#374151;">New Time</label>
-        <select id="reschedule-time-${bookingId}" style="width:100%;padding:0.75rem;border:1px solid #d1d5db;border-radius:8px;">
-          <option value="09:00">9:00 AM</option>
-          <option value="10:00">10:00 AM</option>
-          <option value="11:00">11:00 AM</option>
-          <option value="12:00">12:00 PM</option>
-          <option value="13:00">1:00 PM</option>
-          <option value="14:00">2:00 PM</option>
-          <option value="15:00">3:00 PM</option>
-          <option value="16:00">4:00 PM</option>
-        </select>
-      </div>
-    </div>
-  `;
-
-  showModal(modalContent, { maxWidth: '550px' });
+  console.log('Reschedule data to store:', rescheduleData); // Debug log
+  sessionStorage.setItem('rescheduleData', JSON.stringify(rescheduleData));
   
-  // Add event listeners after modal is shown
-  setTimeout(() => {
-    const cancelBtn = document.querySelector('.modal-dialog button:nth-child(2)');
-    const confirmBtn = document.querySelector('.modal-dialog button:nth-child(3)');
-    
-    if (confirmBtn) {
-      confirmBtn.textContent = 'Confirm Reschedule';
-      confirmBtn.style.background = '#059669';
-      confirmBtn.style.color = 'white';
-      confirmBtn.addEventListener('click', () => handleReschedule(bookingId));
-    }
-  }, 100);
+  // Redirect to booking page
+  window.location.href = 'booking.html?mode=reschedule';
 };
 
 // Handle reschedule - create new booking with new date/service
@@ -5389,7 +5898,28 @@ async function openPricingBreakdownModal(bookingId) {
   }
 
   const addOnsTotal = addOnsArray.reduce((sum, addon) => sum + (addon.price || 0), 0);
-  const servicesTotal = cost.services?.reduce((sum, service) => sum + (service.price || 0), 0) || 0;
+  
+  // Get single services - from cost.services or calculate from booking.singleServices
+  let singleServicesArray = cost.services || [];
+  let servicesTotal = singleServicesArray.reduce((sum, service) => sum + (service.price || 0), 0);
+  
+  // If no cost.services but booking has singleServices, calculate from SINGLE_SERVICE_PRICING
+  if (singleServicesArray.length === 0 && booking.singleServices?.length > 0) {
+    const pricing = window.SINGLE_SERVICE_PRICING || {};
+    singleServicesArray = booking.singleServices.map(serviceId => {
+      const serviceInfo = pricing[serviceId];
+      const label = serviceInfo?.label || serviceId;
+      let price = 0;
+      if (serviceInfo?.tiers) {
+        const weightLabel = booking.petWeight || '';
+        const isSmall = weightLabel.includes('5kg') || weightLabel.includes('below');
+        const tier = isSmall ? serviceInfo.tiers.small : serviceInfo.tiers.large;
+        price = tier?.price || 0;
+      }
+      return { label, price, serviceId };
+    });
+    servicesTotal = singleServicesArray.reduce((sum, s) => sum + (s.price || 0), 0);
+  }
 
   // Calculate correct total: Total Amount = Subtotal - Booking Fee (MINUS, not plus!)
   const subtotal = packagePrice + servicesTotal + addOnsTotal;
@@ -5424,10 +5954,18 @@ async function openPricingBreakdownModal(bookingId) {
           </div>
         ` : ''}
 
-        ${servicesTotal > 0 ? `
-          <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 0.75rem;">
-            <span style="color: var(--gray-700);">🛁 Single Services:</span>
-            <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(servicesTotal)}</span>
+        ${singleServicesArray.length > 0 ? `
+          <div style="margin-bottom: 0.75rem;">
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-bottom: 0.5rem;">
+              <span style="color: var(--gray-700); font-weight: 500;">🛁 Single Services:</span>
+              <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(servicesTotal)}</span>
+            </div>
+            ${singleServicesArray.map(service => `
+              <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; margin-left: 1rem;">
+                <span style="color: var(--gray-600);">• ${escapeHtml(service.label || service.serviceId || 'Service')}</span>
+                <span style="font-weight: 600; color: var(--gray-900);">${formatCurrency(service.price || 0)}</span>
+              </div>
+            `).join('')}
           </div>
         ` : ''}
 

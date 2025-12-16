@@ -84,7 +84,16 @@ function validateStep(step, state) {
   
   switch (step) {
     case 1:
-      // Step 1: Policy Agreement - check DOM directly
+      // Step 1: Policy Agreement - check DOM directly (skip in reschedule mode)
+      // Check if in reschedule mode
+      const urlParams = new URLSearchParams(window.location.search);
+      const isReschedule = urlParams.get('mode') === 'reschedule';
+      
+      if (isReschedule) {
+        // Skip policy check for reschedule - customer already agreed before
+        break;
+      }
+      
       if (typeof document !== 'undefined') {
         const policyCheckbox = document.getElementById('agreeToPolicy');
         if (!policyCheckbox || !policyCheckbox.checked) {

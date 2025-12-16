@@ -2,6 +2,15 @@
    BestBuddies Pet Grooming - Main Utilities
    ============================================ */
 
+// Store Contact Information
+const STORE_INFO = {
+  name: "Yen's Pet Shop",
+  phone: '0951 986 5882',
+  email: 'yenspetshop@gmail.com',
+  address: '' // Add address if needed
+};
+window.STORE_INFO = STORE_INFO;
+
 const STANDARD_TIME_SLOTS = ['9am-12pm', '12pm-3pm', '3pm-6pm']; // 3-hour intervals
 const GROOMER_DAILY_LIMIT = 3; // Each groomer handles 3 bookings per day
 const GROOMING_DURATION_HOURS = 3; // Duration is 3 hours
@@ -1959,7 +1968,7 @@ async function renderWarningPanel() {
         reqBtn.addEventListener('click', async () => {
           // If not banned, suggest contacting admin for review
           if (!info.isBanned) {
-            customAlert.show('No Ban Active', 'Your account is not currently banned. If you received a warning and want clarification, contact us at hello@bestbuddies.pet', 'info');
+            customAlert.show('No Ban Active', `Your account is not currently banned. If you received a warning and want clarification, contact us at ${STORE_INFO.email} or call ${STORE_INFO.phone}`, 'info');
             return;
           }
           // If user exists, open email with prefilled subject and body
@@ -2120,7 +2129,7 @@ async function submitUpliftRequest() {
       console.error('Could not save uplift request', e);
       feedback.style.display = 'block';
       feedback.style.color = 'var(--danger, #d32f2f)';
-      feedback.textContent = 'Could not submit request. Please contact admin at hello@bestbuddies.pet';
+      feedback.textContent = `Could not submit request. Please contact us at ${STORE_INFO.email} or call ${STORE_INFO.phone}`;
     }
   };
   reader.readAsDataURL(file);

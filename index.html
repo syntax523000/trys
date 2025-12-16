@@ -205,21 +205,33 @@
   </div>
 
   <!-- We Look Forward To Meeting You Section -->
-  <section id="contactSection" style="background: #f5f5f5; padding: 4rem 2rem; margin-top: 3rem; border-top: 3px solid #000;">
-    <div class="container">
+  <section id="contactSection" style="background: #f5f5f5; padding: 4rem 4rem; margin-top: 3rem; border-top: 3px solid #000; width: 100%; box-sizing: border-box;">
+    <div style="width: 100%; max-width: 1400px; margin: 0 auto;">
       <h2 style="text-align: center; font-style: italic; font-size: 2.2rem; font-weight: 700; color: #000; margin-bottom: 3rem;">
         We Look Forward To Meeting You!
       </h2>
       
-      <div class="meet-you-grid" style="display: grid; grid-template-columns: 1fr auto 1fr; gap: 3rem; align-items: center; max-width: 1000px; margin: 0 auto;">
+      <div class="meet-you-grid" style="display: grid; grid-template-columns: 300px 1fr 180px 1fr; gap: 3rem; align-items: center; width: 100%;">
         
-        <!-- Left - Contact Info -->
+        <!-- Left - Google Maps Box -->
+        <div class="map-box" style="border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); border: 3px solid #000;">
+          <iframe 
+            src="https://www.google.com/maps/embed?pb=!4v1765858845697!6m8!1m7!1s5B-v5ULY8k3p5Aaie80JfQ!2m2!1d6.763654023076533!2d125.3554652573781!3f174.0304!4f0!5f0.7820865974627469" 
+            width="100%" 
+            height="240" 
+            style="border:0; display: block;" 
+            allowfullscreen="" 
+            loading="lazy" 
+            referrerpolicy="no-referrer-when-downgrade">
+          </iframe>
+        </div>
+        
+        <!-- Contact Info -->
         <div style="text-align: left;">
           <h4 style="font-weight: 700; margin-bottom: 1rem; color: #000; font-size: 1.1rem;">Visit us at:</h4>
-          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">Purok 6, Brgy. Buhangin Proper</p>
-          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">Davao City, Philippines</p>
-          <p style="margin: 1rem 0 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Phone:</strong> 0912-345-6789</p>
-          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Email:</strong> bestbuddiespetgrooming@gmail.com</p>
+          <p style="margin: 0.35rem 0; color: #333; font-size: 0.95rem;">Q974+76R, McArthur Hwy, Digos, Davao del Sur</p>
+          <p style="margin: 1rem 0 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Phone:</strong> 0951 986 5882</p>
+          <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Email:</strong> yenspetshop@gmail.com</p>
           
           <!-- Social Icons - Facebook, Instagram, TikTok -->
           <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
@@ -236,9 +248,9 @@
         </div>
         
         <!-- Center - Logo -->
-        <div style="text-align: center;">
-          <div style="width: 200px; height: 200px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); border: 4px solid #000;">
-            <img src="assets/logo.png" alt="BestBuddies Logo" style="width: 160px; height: 160px; object-fit: contain;">
+        <div style="text-align: center; justify-self: center;">
+          <div style="width: 160px; height: 160px; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15); border: 4px solid #000;">
+            <img src="assets/logo.png" alt="BestBuddies Logo" style="width: 120px; height: 120px; object-fit: contain;">
           </div>
         </div>
         
@@ -260,8 +272,9 @@
 
   <footer>
     <div class="container">
-      <p>&copy; 2024 BestBuddies Pet Grooming. All rights reserved.</p>
+      <p>&copy; 2025 Yen's Pet Shop. All rights reserved.</p>
       <p>Premium grooming services for your beloved pets</p>
+      <p style="margin-top: 0.5rem; font-size: 0.9rem;">📞 0951 986 5882 | ✉️ yenspetshop@gmail.com</p>
     </div>
   </footer>
 
@@ -287,7 +300,48 @@
     // Responsive styles for "We Look Forward" section
     const style = document.createElement('style');
     style.textContent = `
-      @media (max-width: 768px) {
+      #contactSection {
+        box-sizing: border-box;
+      }
+      .map-box {
+        display: block !important;
+      }
+      @media (max-width: 1200px) {
+        #contactSection {
+          padding: 4rem 3rem !important;
+        }
+        .meet-you-grid {
+          grid-template-columns: 280px 1fr 160px 1fr !important;
+          gap: 2rem !important;
+        }
+      }
+      @media (max-width: 1000px) {
+        #contactSection {
+          padding: 3rem 2rem !important;
+        }
+        .meet-you-grid {
+          grid-template-columns: 1fr 1fr !important;
+          gap: 2rem !important;
+        }
+        .meet-you-grid > div:first-child {
+          grid-column: 1 / -1;
+          max-width: 400px;
+          margin: 0 auto;
+        }
+        .meet-you-grid > div:nth-child(2) {
+          text-align: left !important;
+        }
+        .meet-you-grid > div:nth-child(3) {
+          display: none !important;
+        }
+        .meet-you-grid > div:nth-child(4) {
+          text-align: right !important;
+        }
+      }
+      @media (max-width: 600px) {
+        #contactSection {
+          padding: 3rem 1.5rem !important;
+        }
         .meet-you-grid {
           grid-template-columns: 1fr !important;
           text-align: center !important;
@@ -296,11 +350,29 @@
         .meet-you-grid > div {
           text-align: center !important;
         }
-        .meet-you-grid > div:first-child > div:last-child {
+        .meet-you-grid > div:first-child {
+          max-width: 100%;
+        }
+        .meet-you-grid > div:first-child iframe {
+          height: 200px !important;
+        }
+        .meet-you-grid > div:nth-child(2) > div:last-child {
           justify-content: center !important;
         }
+        .meet-you-grid > div:nth-child(3) {
+          display: block !important;
+          order: -1;
+        }
+        .meet-you-grid > div:nth-child(3) > div {
+          width: 120px !important;
+          height: 120px !important;
+        }
+        .meet-you-grid > div:nth-child(3) > div img {
+          width: 90px !important;
+          height: 90px !important;
+        }
         #contactSection h2 {
-          font-size: 1.5rem !important;
+          font-size: 1.4rem !important;
         }
       }
     `;

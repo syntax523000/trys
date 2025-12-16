@@ -2,18 +2,23 @@
    BestBuddies Pet Grooming - Booking Page Styles
    ============================================ */
 
+/* Booking Page Container */
+#bookingPage.container-lg {
+  max-width: 1400px;
+  width: 100%;
+  padding: 0 2rem;
+  box-sizing: border-box;
+}
+
 /* Booking Layout */
 .booking-layout {
   display: grid;
-  grid-template-columns: 1fr 350px;
+  grid-template-columns: 1fr 380px;
   gap: 2rem;
   margin-top: 2rem;
-}
-
-/* Ensure the right column (summary) never forces horizontal overflow */
-.booking-layout {
   align-items: start;
   box-sizing: border-box;
+  max-width: 100%;
 }
 
 /* Navigation buttons (desktop) */
@@ -135,7 +140,8 @@
 .touch-container {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: visible;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -299,19 +305,83 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1.5rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+/* Summary item styling */
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--gray-100);
+  gap: 0.5rem;
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-label {
+  font-size: 0.85rem;
+  color: var(--gray-600);
+  flex-shrink: 0;
+  min-width: 70px;
+}
+
+.summary-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--gray-900);
+  text-align: right;
+  word-break: break-word;
+}
+
+.summary-alert {
+  background: #fff3e0;
+  border: 1px solid #ff9800;
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: #e65100;
 }
 
 /* Desktop: limit height so summary doesn't overflow the page and enable internal scroll */
 @media (min-width: 969px) {
   .summary-card {
     max-height: calc(100vh - 140px);
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: visible;
     width: 100%;
+    min-height: 400px;
+  }
+  
+  /* Ensure summary content is fully visible */
+  .summary-card .summary-item {
+    margin-bottom: 0.75rem;
+    word-wrap: break-word;
+  }
+  
+  .summary-card h3 {
+    position: sticky;
+    top: 0;
+    background: var(--white);
+    z-index: 1;
+    padding-bottom: 0.5rem;
   }
 }
 
 /* Mobile Responsive */
 @media (max-width: 968px) {
+  #bookingPage.container-lg {
+    padding: 0 1rem;
+  }
+
   .booking-layout {
     grid-template-columns: 1fr;
     max-width: 100%;
@@ -323,6 +393,12 @@
     max-width: 100%;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Summary sidebar on mobile */
+  .summary-sidebar {
+    position: static !important;
+    max-width: 100% !important;
   }
 
   .summary-card {
@@ -1082,15 +1158,42 @@
    ============================================ */
 .booking-layout {
   display: grid !important;
-  grid-template-columns: 1fr 350px !important;
+  grid-template-columns: 1fr 380px !important;
   gap: 2rem !important;
   align-items: start !important;
+  max-width: 100% !important;
+  overflow: visible !important;
 }
 
 /* First column flex for proper button ordering */
 .booking-layout>div:first-child {
   display: flex !important;
   flex-direction: column !important;
+  min-width: 0 !important;
+}
+
+/* Second column - Summary sidebar container */
+.booking-layout>div:last-child,
+.booking-layout .summary-sidebar {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 380px !important;
+  overflow: visible !important;
+}
+
+/* Booking Summary container */
+#bookingSummary {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+/* Summary sidebar specific styles */
+.summary-sidebar {
+  position: sticky;
+  top: 100px;
+  align-self: start;
 }
 
 /* ============================================
@@ -1159,9 +1262,11 @@
   }
 
   /* Summary goes to bottom */
-  .booking-layout>div:last-child {
+  .booking-layout>div:last-child,
+  .booking-layout .summary-sidebar {
     position: static !important;
     order: 2 !important;
+    max-width: 100% !important;
   }
 
   /* Buttons stack vertically */

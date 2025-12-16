@@ -29,6 +29,171 @@ const totalSteps = 5;
 const SINGLE_SERVICE_PACKAGE_ID = 'single-service';
 const SINGLE_SERVICE_OPTIONS = window.SINGLE_SERVICE_PRICING || {};
 
+// Check if this is a reschedule operation
+let isRescheduleMode = false;
+let rescheduleData = null;
+
+// Populate form fields with reschedule data
+function populateRescheduleForm() {
+  if (!isRescheduleMode || !rescheduleData) return;
+  
+  console.log('Populating form with reschedule data:', rescheduleData);
+  
+  // Set pet type first (needed for package filtering)
+  if (rescheduleData.petType && typeof selectPetType === 'function') {
+    selectPetType(rescheduleData.petType);
+  }
+  
+  // Select package
+  if (rescheduleData.packageId && typeof selectPackage === 'function') {
+    selectPackage(rescheduleData.packageId);
+  }
+  
+  // Populate customer information
+  const ownerNameInput = document.getElementById('ownerName');
+  if (ownerNameInput && rescheduleData.customerName) {
+    ownerNameInput.value = rescheduleData.customerName;
+  }
+  
+  const contactNumberInput = document.getElementById('contactNumber');
+  if (contactNumberInput && rescheduleData.customerPhone) {
+    contactNumberInput.value = rescheduleData.customerPhone;
+  }
+  
+  const ownerAddressInput = document.getElementById('ownerAddress');
+  if (ownerAddressInput && rescheduleData.customerAddress) {
+    ownerAddressInput.value = rescheduleData.customerAddress;
+  }
+  
+  // Populate pet information
+  const petNameInput = document.getElementById('petName');
+  if (petNameInput && rescheduleData.petName) {
+    petNameInput.value = rescheduleData.petName;
+  }
+  
+  const petBreedInput = document.getElementById('petBreed');
+  if (petBreedInput && rescheduleData.petBreed) {
+    petBreedInput.value = rescheduleData.petBreed;
+  }
+  
+  const petAgeSelect = document.getElementById('petAge');
+  if (petAgeSelect && rescheduleData.petAge) {
+    petAgeSelect.value = rescheduleData.petAge;
+  }
+  
+  // Populate pet weight (radio buttons)
+  if (rescheduleData.petWeight) {
+    const weightRadio = document.querySelector(`input[name="petWeight"][value="${rescheduleData.petWeight}"]`);
+    if (weightRadio) {
+      weightRadio.checked = true;
+    }
+  }
+  
+  // Populate medical notes
+  const medicalNotesInput = document.getElementById('medicalNotes');
+  if (medicalNotesInput && rescheduleData.medicalNotes) {
+    medicalNotesInput.value = rescheduleData.medicalNotes;
+  }
+  
+  const bookingNotesInput = document.getElementById('bookingNotes');
+  if (bookingNotesInput && rescheduleData.specialInstructions) {
+    bookingNotesInput.value = rescheduleData.specialInstructions;
+  }
+  
+  // Explicitly update bookingData with all reschedule information
+  bookingData.ownerName = rescheduleData.customerName || '';
+  bookingData.contactNumber = rescheduleData.customerPhone || '';
+  bookingData.ownerAddress = rescheduleData.customerAddress || '';
+  bookingData.petName = rescheduleData.petName || '';
+  bookingData.petBreed = rescheduleData.petBreed || '';
+  bookingData.petAge = rescheduleData.petAge || '';
+  bookingData.petWeight = rescheduleData.petWeight || '';
+  bookingData.medicalNotes = rescheduleData.medicalNotes || '';
+  bookingData.bookingNotes = rescheduleData.specialInstructions || '';
+  
+  console.log('Form populated with reschedule data');
+  
+  // Sync form data to bookingData
+  if (typeof syncFormToBookingData === 'function') {
+    syncFormToBookingData();
+  }
+  
+  // Update the booking summary with reschedule data
+  console.log('Updating summary with bookingData:', bookingData);
+  if (typeof updateSummary === 'function') {
+    updateSummary();
+  }
+  
+  // Enable next button
+  if (typeof enableNextButton === 'function') {
+    enableNextButton();
+  }
+  
+  // Force update the UI elements
+  setTimeout(() => {
+    if (typeof updateSummary === 'function') {
+      updateSummary();
+    }
+  }, 200);
+}
+
+// Initialize reschedule mode if coming from admin
+function initializeRescheduleMode() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  
+  if (mode === 'reschedule') {
+    const storedData = sessionStorage.getItem('rescheduleData');
+    if (storedData) {
+      try {
+        rescheduleData = JSON.parse(storedData);
+        isRescheduleMode = true;
+        
+        // Pre-fill booking data with existing information
+        bookingData = {
+          ...bookingData,
+          ownerName: rescheduleData.customerName || '',
+          contactNumber: rescheduleData.customerPhone || '',
+          ownerAddress: rescheduleData.customerAddress || '',
+          petName: rescheduleData.petName || '',
+          petType: rescheduleData.petType || null,
+          petBreed: rescheduleData.petBreed || '',
+          petAge: rescheduleData.petAge || '',
+          petWeight: rescheduleData.petWeight || '',
+          packageId: rescheduleData.packageId || null,
+          addOns: rescheduleData.addOns || [],
+          medicalNotes: rescheduleData.medicalNotes || '',
+          bookingNotes: rescheduleData.specialInstructions || '',
+          groomerId: rescheduleData.currentGroomerId || null
+        };
+        
+        // Set to jump to Schedule step (step 4) - reschedule only changes date/time
+        currentStep = 4;
+        
+        // Update page title and header
+        document.title = 'Reschedule Booking - BestBuddies Pet Grooming';
+        const headerTitle = document.querySelector('.hero h1');
+        if (headerTitle) {
+          headerTitle.textContent = `Reschedule ${rescheduleData.petName}'s Appointment`;
+        }
+        
+        const headerSubtitle = document.querySelector('.hero p');
+        if (headerSubtitle) {
+          headerSubtitle.textContent = `Update the date, time, or service for ${rescheduleData.petName}'s grooming appointment.`;
+        }
+        
+        // Pre-fill form fields with reschedule data
+        // This will be called after initBooking completes
+        
+        console.log('Reschedule mode initialized:', rescheduleData);
+      } catch (e) {
+        console.error('Failed to parse reschedule data:', e);
+        isRescheduleMode = false;
+      }
+    }
+  }
+}
+
 function normalizeWeightValue(value = '') {
   return value.replace(/-/g, 'â€“');
 }
@@ -114,6 +279,10 @@ function updateAgeDropdownOptions() {
 // Initialize booking page
 async function initBooking() {
   console.log('[initBooking] Starting booking page initialization...');
+  
+  // Initialize reschedule mode first
+  initializeRescheduleMode();
+  
   try {
     // ensure packages resolved before any computeBookingCost / updateSummary calls
     if (typeof ensurePackagesLoaded === 'function') {
@@ -161,6 +330,11 @@ async function initBooking() {
       targetStep = 5;
       sessionStorage.removeItem('bookingCancelId');
     }
+    
+    // If in reschedule mode, jump to Schedule step (step 4) - only change date/time
+    if (isRescheduleMode) {
+      targetStep = 4;
+    }
 
     // Restore form fields from bookingData so the UI is prefilled
     try {
@@ -192,12 +366,12 @@ async function initBooking() {
       // Continue without user - allow browsing
     }
 
-    // Pre-fill owner details with account info if logged in
+    // Pre-fill owner details with account info if logged in (but not in reschedule mode)
     const ownerNameInput = document.getElementById('ownerName');
     const contactNumberInput = document.getElementById('contactNumber');
     const ownerAddressInput = document.getElementById('ownerAddress');
 
-    if (user) {
+    if (user && !isRescheduleMode) {
       if (ownerNameInput) {
         ownerNameInput.value = user.name || '';
         bookingData.ownerName = user.name || '';
@@ -254,6 +428,13 @@ async function initBooking() {
     
     // Enable/disable next button based on current step
     enableNextButton();
+    
+    // Populate reschedule form if in reschedule mode
+    if (isRescheduleMode) {
+      setTimeout(() => {
+        populateRescheduleForm();
+      }, 100); // Small delay to ensure DOM is ready
+    }
   } catch (error) {
     console.error('Error initializing booking:', error);
     // Don't show alert for permission errors - user might not be logged in yet
@@ -943,7 +1124,10 @@ function validateStep(step) {
   
   switch (step) {
     case 1:
-      // Policy agreement step
+      // Policy agreement step - skip in reschedule mode (already agreed before)
+      if (isRescheduleMode) {
+        break;
+      }
       const policyCheckbox = document.getElementById('agreeToPolicy');
       if (!policyCheckbox || !policyCheckbox.checked) {
         customAlert.warning('Policy Agreement Required', 'Please scroll through and read our policy, then check the agreement box to continue.');
@@ -1553,15 +1737,89 @@ function selectTime(time) {
 
   updateSummary();
   enableNextButton();
+  
+  // Auto-submit in reschedule mode when time is selected
+  if (isRescheduleMode && bookingData.date && bookingData.time) {
+    // Show confirmation before auto-submitting
+    customAlert.confirm('Confirm Reschedule', `Reschedule to ${bookingData.date} at ${time}?`).then(confirmed => {
+      if (confirmed) {
+        autoSubmitReschedule();
+      }
+    });
+  }
+}
+
+// Auto-submit reschedule without going through step 5
+async function autoSubmitReschedule() {
+  if (!isRescheduleMode || !rescheduleData) return;
+  
+  try {
+    // Show loading
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay();
+    }
+    
+    // Get the original booking and update it
+    const bookings = await getBookings();
+    const booking = bookings.find(b => b.id === rescheduleData.originalBookingId);
+    
+    if (!booking) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.error('Error', 'Original booking not found');
+      return;
+    }
+    
+    // Update only the date and time
+    booking.date = bookingData.date;
+    booking.time = bookingData.time;
+    booking.status = 'confirmed'; // Auto-confirm since admin is doing the reschedule
+    
+    // Save the updated booking
+    if (typeof updateBooking === 'function') {
+      await updateBooking(booking);
+    } else {
+      await saveBookings(bookings);
+    }
+    
+    // Log the reschedule action
+    if (typeof logBookingHistory === 'function') {
+      logBookingHistory({
+        bookingId: booking.id,
+        action: 'Rescheduled',
+        message: `Rescheduled from ${rescheduleData.currentDate} ${rescheduleData.currentTime} to ${booking.date} ${booking.time}`,
+        actor: 'Admin'
+      });
+    }
+    
+    // Clear reschedule data
+    sessionStorage.removeItem('rescheduleData');
+    
+    // Hide loading
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    
+    // Show success and redirect back to admin
+    await customAlert.success('Rescheduled!', `Booking moved to ${booking.date} at ${booking.time}`);
+    window.location.href = 'admin-dashboard.html';
+    
+  } catch (error) {
+    console.error('Reschedule error:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    customAlert.error('Error', 'Failed to reschedule booking. Please try again.');
+  }
 }
 
 // Update summary
 async function updateSummary() {
+  console.log('updateSummary called with bookingData:', bookingData);
   const summaryContainer = document.getElementById('bookingSummary');
-  if (!summaryContainer) return;
+  if (!summaryContainer) {
+    console.log('No bookingSummary container found');
+    return;
+  }
 
   const packages = await getPackages();
   const selectedPackage = packages.find(p => p.id === bookingData.packageId);
+  console.log('Selected package:', selectedPackage);
 
   const user = await getCurrentUser();
   const warningInfo = user ? await getCustomerWarningInfo(user.id) : { warnings: 0 };
@@ -1840,7 +2098,11 @@ function enableNextButton() {
   let isValid = false;
   switch (currentStep) {
     case 1:
-      // Policy agreement step - check if checkbox is checked
+      // Policy agreement step - check if checkbox is checked (skip in reschedule mode)
+      if (isRescheduleMode) {
+        isValid = true;
+        break;
+      }
       const policyCheckbox = document.getElementById('agreeToPolicy');
       isValid = policyCheckbox && policyCheckbox.checked;
       break;
@@ -2040,6 +2302,46 @@ async function submitBooking(event) {
       bookingFeePaid: costDetails?.totalDueToday || 0,
       balanceOnVisit: costDetails?.balanceOnVisit || 0
     };
+
+    // Handle reschedule mode
+    if (isRescheduleMode && rescheduleData) {
+      booking.id = rescheduleData.originalBookingId;
+      booking.status = 'pending'; // Reset to pending for admin approval
+      
+      // Update the existing booking
+      if (typeof updateBooking === 'function') {
+        await updateBooking(booking);
+      } else {
+        // fallback local update
+        const bookings = await getBookings();
+        const idx = bookings.findIndex(b => b.id === rescheduleData.originalBookingId);
+        if (idx >= 0) {
+          bookings[idx] = booking;
+          await saveBookings(bookings);
+        }
+      }
+      
+      // Log the reschedule action
+      if (typeof logBookingHistory === 'function') {
+        logBookingHistory({
+          bookingId: booking.id,
+          action: 'Rescheduled',
+          message: `Rescheduled from ${rescheduleData.currentDate} ${rescheduleData.currentTime} to ${booking.date} ${booking.time}`,
+          actor: 'Admin'
+        });
+      }
+      
+      // Clear reschedule data
+      sessionStorage.removeItem('rescheduleData');
+      
+      // Hide loading overlay
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      
+      // Show success and redirect back to admin
+      await customAlert.success('Booking Rescheduled', `${booking.petName}'s appointment has been rescheduled successfully.`);
+      window.location.href = 'admin-dashboard.html';
+      return;
+    }
 
     // NEW: if editing, update existing booking instead of creating new
     const editingId = bookingData.editingBookingId || sessionStorage.getItem('editingBookingId');

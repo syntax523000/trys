@@ -50,7 +50,7 @@
 .service-card-hover {
   width: 100%;
   height: 420px;
-  background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
+  background: transparent;
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -148,15 +148,49 @@
   transition: all 0.3s ease-in-out;
   position: absolute;
   width: calc(100% - 4rem);
-  background: rgba(255, 255, 255, 0.95);
+  background: transparent;
   padding: 1.5rem;
   border-radius: 12px;
 }
 
-/* Mobile: transparent pricing background */
+/* FORCE TRANSPARENT - ALL SCREEN SIZES - HIGHEST SPECIFICITY */
+div.service-card-hover,
+div.service-card-hover div.service-content,
+div.service-card-hover div.service-pricing,
+div.service-card-hover div.pricing-list,
+div.service-card-hover div.price-item,
+.grid .service-card-hover,
+.grid .service-card-hover .service-content,
+.grid .service-card-hover .service-pricing,
+.grid .service-card-hover .pricing-list,
+.grid .service-card-hover .price-item {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Mobile: transparent pricing background - all mobile sizes */
 @media (max-width: 768px) {
   .service-pricing {
     background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+  
+  .service-card-hover {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+  
+  .service-card-hover .service-content {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+  
+  .service-card-hover .service-pricing {
+    background: transparent !important;
+    background-color: transparent !important;
   }
 }
 
@@ -377,31 +411,34 @@
 /* Public review feed grid (before & after galleries) */
 .review-feed-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr); /* Fixed 4 columns on desktop */
-  gap: 1rem;
+  grid-template-columns: repeat(2, 1fr); /* 2x2 layout */
+  gap: 1.5rem;
   align-items: start;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .review-card {
   display: flex;
   flex-direction: column;
   background: var(--white);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   border: 1px solid var(--gray-200);
   overflow: hidden;
-  max-width: 280px; /* Fixed max width */
   width: 100%;
 }
 
 .review-card-gallery {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
+  gap: 4px;
   width: 100%;
-  height: 140px; /* Fixed height for consistency */
+  aspect-ratio: 2 / 1;
+  min-height: 220px; /* Bigger images */
   overflow: hidden;
   background: var(--gray-100);
+  position: relative;
 }
 
 .review-card-gallery img {
@@ -409,6 +446,11 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform 0.3s ease;
+}
+
+.review-card-gallery img:hover {
+  transform: scale(1.05);
 }
 
 .review-card-content {
@@ -427,49 +469,47 @@
   color: var(--gray-900);
 }
 
-/* Tablet - 3 columns */
+/* Tablet - still 2 columns */
 @media (max-width: 1024px) {
   .review-feed-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  
-  .review-card {
-    max-width: 100%;
-  }
-}
-
-/* Mobile - 2 columns */
-@media (max-width: 768px) {
-  .review-feed-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
+    gap: 1rem;
   }
   
   .review-card-gallery {
-    height: 120px;
+    min-height: 180px;
+  }
+}
+
+/* Mobile - 1 column for bigger cards */
+@media (max-width: 768px) {
+  .review-feed-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    max-width: 500px;
+  }
+  
+  .review-card-gallery {
+    min-height: 200px;
   }
   
   .review-card-content {
-    padding: 0.5rem;
+    padding: 0.75rem;
   }
   
   .review-card-content p {
-    font-size: 0.75rem;
+    font-size: 0.85rem;
   }
 }
 
-/* Small mobile - 1 column */
+/* Small mobile */
 @media (max-width: 480px) {
   .review-feed-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .review-card {
     max-width: 100%;
   }
   
   .review-card-gallery {
-    height: 150px;
+    min-height: 160px;
   }
 }
 
@@ -738,6 +778,28 @@
   
   /* Ensure service content area is also transparent */
   .service-card-hover .service-content {
+    background: none !important;
+    background-color: transparent !important;
+  }
+  
+  /* Force transparent on all elements */
+  .service-card-hover,
+  .service-card-hover .service-content,
+  .service-card-hover .service-pricing,
+  .service-card-hover .pricing-list,
+  .service-card-hover .price-item {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+  
+  /* Specific override for pricing list */
+  .pricing-list {
+    background: none !important;
+    background-color: transparent !important;
+  }
+  
+  .price-item {
     background: none !important;
     background-color: transparent !important;
   }
