@@ -156,10 +156,49 @@ class CustomAlert {
     info(title, message) {
         return this.show(title, message, 'info', 'ℹ️', 'Okay');
     }
+
+    /**
+     * Show loading overlay with spinner
+     * @param {string} message - Loading message (default: "Loading...")
+     */
+    showLoading(message = 'Loading...') {
+        // Reset classes for loading
+        this.box.className = 'custom-alert-box alert-loading';
+
+        // Build loading HTML with spinner
+        this.box.innerHTML = `
+            <div class="custom-alert-header">
+                <div class="loading-spinner"></div>
+            </div>
+            <div class="custom-alert-content">
+                <div class="custom-alert-title">${message}</div>
+                <div class="custom-alert-message">Please wait while we process your request</div>
+            </div>
+        `;
+
+        // Show overlay
+        this.overlay.classList.add('active');
+    }
+
+    /**
+     * Hide loading overlay
+     */
+    hideLoading() {
+        this.overlay.classList.remove('active');
+    }
 }
 
 // Initialize global instance
 window.customAlert = new CustomAlert();
+
+// Make loading functions globally available
+window.showLoadingOverlay = function(message) {
+    window.customAlert.showLoading(message);
+};
+
+window.hideLoadingOverlay = function() {
+    window.customAlert.hideLoading();
+};
 
 // Optional: Override window.alert (Note: this makes it async-ish, but window.alert is sync.
 // Code expecting sync blocking will continue immediately. Use with caution or refactor.)

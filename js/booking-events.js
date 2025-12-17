@@ -241,10 +241,22 @@ function handleFormInput(fieldName, value, stateManager, onStateChange) {
     [fieldName]: value.trim()
   });
   
-  // Trigger side effects
-  if (typeof updateSummary === 'function') {
-    updateSummary();
+  // Trigger side effects - use debounced update for text inputs to prevent flickering
+  const textInputFields = ['ownerName', 'ownerAddress', 'petName', 'petBreed', 'medicalNotes', 'vaccinationNotes', 'bookingNotes'];
+  if (textInputFields.includes(fieldName)) {
+    // Use debounced update for text inputs to prevent flickering during typing
+    if (typeof debouncedUpdateSummary === 'function') {
+      debouncedUpdateSummary();
+    } else if (typeof updateSummary === 'function') {
+      updateSummary();
+    }
+  } else {
+    // Use immediate update for dropdowns and other non-text inputs
+    if (typeof updateSummary === 'function') {
+      updateSummary();
+    }
   }
+  
   if (typeof enableNextButton === 'function') {
     enableNextButton();
   }
@@ -278,10 +290,13 @@ function handlePhoneInput(value, stateManager, onStateChange) {
     contactInput.setCustomValidity(validation.error || 'Invalid phone number');
   }
   
-  // Trigger side effects
-  if (typeof updateSummary === 'function') {
+  // Trigger side effects - use debounced update for phone input to prevent flickering
+  if (typeof debouncedUpdateSummary === 'function') {
+    debouncedUpdateSummary();
+  } else if (typeof updateSummary === 'function') {
     updateSummary();
   }
+  
   if (typeof enableNextButton === 'function') {
     enableNextButton();
   }

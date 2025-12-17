@@ -2,7 +2,7 @@
    BestBuddies Pet Grooming - Authentication
    ============================================ */
 
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInWithPopup, GoogleAuthProvider, FacebookAuthProvider } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
 import { ref, set, get } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
 import { getCurrentUser, setCurrentUser, clearCurrentUser, getUsers, saveUsers } from "./firebase-db.js";
 
@@ -15,7 +15,7 @@ function getFirebaseDatabase() {
   return window.firebaseDatabase;
 }
 
-// Signup function - Firebase only
+// Signup function - Uses Firebase's built-in Email Verification
 async function signup(event) {
   event.preventDefault();
 
@@ -32,6 +32,13 @@ async function signup(event) {
     return;
   }
 
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    customAlert.warning('Invalid Email', 'Please enter a valid email address');
+    return;
+  }
+
   // Validate phone number - only numbers allowed, exactly 11 digits
   if (!/^\d{11}$/.test(phone)) {
     customAlert.warning('Invalid Phone Number', 'Phone number must be exactly 11 digits (numbers only)');
@@ -43,27 +50,32 @@ async function signup(event) {
     return;
   }
 
+  // Show loading
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay('Creating your account...');
+  }
+
   try {
     const auth = getFirebaseAuth();
+    const db = getFirebaseDatabase();
 
-    if (!auth) {
-      customAlert.error('Firebase Error', 'Firebase Auth is not initialized');
+    if (!auth || !db) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.error('Firebase Error', 'Firebase is not initialized');
       return;
     }
 
-    // Use Firebase Auth for signup
+    // Create Firebase Auth account
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 
     console.log('✓ Firebase Auth signup successful for:', user.email);
 
-    // Create user profile in Firebase Database
-    const db = getFirebaseDatabase();
-    if (!db) {
-      customAlert.error('Firebase Error', 'Firebase Database is not initialized');
-      return;
-    }
+    // Send Firebase email verification
+    await sendEmailVerification(user);
+    console.log('✓ Verification email sent to:', user.email);
 
+    // Create user profile in Firebase Database
     const userProfile = {
       id: user.uid,
       name: name,
@@ -73,6 +85,7 @@ async function signup(event) {
       role: role,
       warnings: 0,
       isBanned: false,
+      emailVerified: false,
       createdAt: Date.now()
     };
 
@@ -81,23 +94,33 @@ async function signup(event) {
 
     console.log('✓ User profile created in Firebase:', userProfile);
 
-    // Set current user
-    setCurrentUser(userProfile);
+    // Hide loading
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
 
-    // Check for return URL (for browse-first booking flow)
-    const urlParams = new URLSearchParams(window.location.search);
-    const returnPage = urlParams.get('return') || 'customer-dashboard.html';
+    // Sign out the user - they need to verify email first
+    await signOut(auth);
 
-    // Redirect
-    redirect(returnPage);
+    // Show success message with verification instructions
+    await customAlert.success(
+      'Account Created!', 
+      `A verification email has been sent to <strong>${email}</strong>.<br><br>Please check your inbox (and spam folder) and click the verification link before logging in.`
+    );
+
+    // Redirect to login page
+    redirect('login.html');
+
   } catch (error) {
     console.error('Signup error:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    
     let errorMessage = 'An error occurred during signup. Please try again.';
 
     if (error.code === 'auth/email-already-in-use') {
       errorMessage = 'This email is already registered. Please login instead.';
     } else if (error.code === 'auth/weak-password') {
       errorMessage = 'Password is too weak. Please use a stronger password.';
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = 'Please enter a valid email address.';
     } else if (error.message) {
       errorMessage = error.message;
     }
@@ -106,7 +129,7 @@ async function signup(event) {
   }
 }
 
-// Login function - Firebase only
+// Login function - Firebase only with Email Verification Check
 async function login(event) {
   event.preventDefault();
 
@@ -119,10 +142,16 @@ async function login(event) {
     return;
   }
 
+  // Show loading
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay('Logging in...');
+  }
+
   try {
     const auth = getFirebaseAuth();
 
     if (!auth) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       customAlert.error('Firebase Error', 'Firebase Auth is not initialized');
       return;
     }
@@ -133,9 +162,39 @@ async function login(event) {
 
     console.log('Firebase Auth login successful for:', user.email);
 
+    // TEMPORARILY DISABLED - Email verification check (uncomment to re-enable)
+    // const isSystemAccount = email.includes('@bestbuddies.com') || email.includes('admin');
+    // if (!user.emailVerified && !isSystemAccount) {
+    //   console.log('⚠️ Email not verified for:', user.email);
+    //   if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    //   
+    //   // Offer to resend verification email
+    //   const resend = await customAlert.confirm(
+    //     'Email Not Verified',
+    //     'Please verify your email before logging in. Check your inbox (and spam folder) for the verification link.<br><br>Would you like us to resend the verification email?',
+    //     'Resend Email',
+    //     'Cancel'
+    //   );
+    //   
+    //   if (resend) {
+    //     try {
+    //       await sendEmailVerification(user);
+    //       await customAlert.success('Email Sent', `A new verification email has been sent to ${user.email}`);
+    //     } catch (resendError) {
+    //       console.error('Error resending verification:', resendError);
+    //       customAlert.error('Error', 'Could not resend verification email. Please try again later.');
+    //     }
+    //   }
+    //   
+    //   // Sign out the user
+    //   await signOut(auth);
+    //   return;
+    // }
+
     // Get user profile from Firebase Database
     const db = getFirebaseDatabase();
     if (!db) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
       customAlert.error('Firebase Error', 'Firebase Database is not initialized');
       return;
     }
@@ -146,10 +205,37 @@ async function login(event) {
     if (snapshot.exists()) {
       const userProfile = snapshot.val();
       userProfile.id = user.uid;
+      
+      // Update emailVerified status in database
+      if (user.emailVerified && !userProfile.emailVerified) {
+        userProfile.emailVerified = true;
+        await set(userRef, userProfile);
+      }
+      
       console.log('✓ Login: User profile loaded from Firebase:', userProfile);
       setCurrentUser(userProfile);
     } else {
-      // User authenticated but profile doesn't exist - create it
+      // User authenticated but profile doesn't exist - this should not happen for groomers
+      // Only create new profiles for regular customers
+      console.warn('⚠️ Login: No profile found for authenticated user:', user.email);
+      
+      // Check if this is a groomer email
+      const groomerEmails = [
+        'botchoy@bestbuddies.com',
+        'ejay@bestbuddies.com', 
+        'jinold@bestbuddies.com',
+        'jom@bestbuddies.com',
+        'sam.groomer@bestbuddies.com'
+      ];
+      
+      if (groomerEmails.includes(user.email)) {
+        if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        customAlert.error('Groomer Profile Missing', 'Your groomer profile is not set up properly. Please contact the administrator.');
+        await signOut(auth);
+        return;
+      }
+      
+      // Create customer profile for non-groomer users
       const userProfile = {
         id: user.uid,
         email: user.email,
@@ -157,12 +243,16 @@ async function login(event) {
         role: 'customer',
         warnings: 0,
         isBanned: false,
+        emailVerified: user.emailVerified,
         createdAt: Date.now()
       };
-      console.log('✓ Login: Creating new user profile in Firebase:', userProfile);
+      console.log('✓ Login: Creating new customer profile in Firebase:', userProfile);
       await set(userRef, userProfile);
       setCurrentUser(userProfile);
     }
+
+    // Hide loading before redirect
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
 
     // Check for return URL (for browse-first booking flow)
     const urlParams = new URLSearchParams(window.location.search);
@@ -183,6 +273,8 @@ async function login(event) {
     }
   } catch (error) {
     console.error('Login error:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    
     let errorMessage = 'Invalid email or password';
 
     if (error.code === 'auth/user-not-found') {
@@ -284,6 +376,8 @@ window.requireStaff = requireStaff;
 
 // Make logout function globally available for onclick handlers
 window.logout = logout;
+
+
 
 // Helper function to prompt for phone and address using custom alert
 async function promptForPhoneAndAddress(userProfile) {
@@ -415,6 +509,21 @@ async function handleGoogleSignIn() {
         userProfile.id = user.uid;
         setCurrentUser(userProfile);
       } else {
+        // Check if this is a groomer email
+        const groomerEmails = [
+          'botchoy@bestbuddies.com',
+          'ejay@bestbuddies.com', 
+          'jinold@bestbuddies.com',
+          'jom@bestbuddies.com',
+          'sam.groomer@bestbuddies.com'
+        ];
+        
+        if (groomerEmails.includes(user.email)) {
+          customAlert.error('Groomer Profile Missing', 'Your groomer profile is not set up properly. Please contact the administrator.');
+          await signOut(auth);
+          return;
+        }
+        
         const newProfile = {
           id: user.uid,
           email: user.email,
@@ -486,102 +595,7 @@ async function handleGoogleSignIn() {
 // expose globally for HTML onclick
 window.handleGoogleSignIn = handleGoogleSignIn;
 
-// Facebook Sign-In handler (exposed globally for inline onclick in HTML)
-async function handleFacebookSignIn() {
-  try {
-    const auth = getFirebaseAuth();
-    if (!auth) {
-      customAlert.error('Firebase not initialized.');
-      return;
-    }
 
-    const provider = new FacebookAuthProvider();
-    // Request email permission explicitly
-    provider.addScope('email');
-
-    const result = await signInWithPopup(auth, provider);
-    const user = result.user;
-
-    // Save/retrieve profile in Realtime Database (or fallback)
-    const db = getFirebaseDatabase();
-    if (db) {
-      const userRef = ref(db, `users/${user.uid}`);
-      const snapshot = await get(userRef);
-      if (snapshot.exists()) {
-        const userProfile = snapshot.val();
-        userProfile.id = user.uid;
-        setCurrentUser(userProfile);
-      } else {
-        const newProfile = {
-          id: user.uid,
-          email: user.email,
-          name: user.displayName || (user.email ? user.email.split('@')[0] : 'Customer'),
-          phone: '',
-          address: '',
-          gender: null,
-          role: 'customer',
-          warnings: 0,
-          isBanned: false,
-          createdAt: Date.now()
-        };
-        
-        // Prompt for phone number and address
-        await promptForPhoneAndAddress(newProfile);
-        
-        await set(userRef, newProfile);
-        setCurrentUser(newProfile);
-      }
-    } else {
-      // Local fallback
-      const users = await getUsers();
-      let existing = users.find(u => u.email === user.email);
-      if (existing) {
-        setCurrentUser(existing);
-      } else {
-        const newUser = {
-          id: user.uid,
-          name: user.displayName || (user.email ? user.email.split('@')[0] : 'Customer'),
-          email: user.email,
-          phone: '',
-          address: '',
-          gender: null,
-          role: 'customer',
-          createdAt: Date.now(),
-          warnings: 0
-        };
-        
-        // Prompt for phone number and address
-        await promptForPhoneAndAddress(newUser);
-
-        users.push(newUser);
-        await saveUsers(users);
-        setCurrentUser(newUser);
-      }
-    }
-
-    // Redirect after sign-in
-    const urlParams = new URLSearchParams(window.location.search);
-    const returnPage = urlParams.get('return');
-    if (returnPage) {
-      redirect(returnPage);
-    } else {
-      const currentUser = await getCurrentUser();
-      if (currentUser && currentUser.role === 'admin') {
-        redirect('admin-dashboard.html');
-      } else {
-        redirect('customer-dashboard.html');
-      }
-    }
-  } catch (error) {
-    console.error('Facebook Sign-In error:', error);
-    let msg = 'Facebook Sign-In failed. Please try again.';
-    if (error && error.code) msg += ` (${error.code})`;
-    customAlert.error('Sign-In Error', msg);
-  }
-}
-
-// expose globally for HTML onclick
-window.handleFacebookSignIn = handleFacebookSignIn;
 
 // Initialize login form
 document.addEventListener('DOMContentLoaded', function () {

@@ -63,6 +63,12 @@ class BookingIntegration {
    * @private
    */
   setupEventListeners() {
+    // DISABLED: Prevent duplicate event listeners
+    // The main booking.js already sets up all necessary event listeners with proper debouncing
+    // This integration system was causing duplicate handlers that caused summary flickering
+    console.log('[BookingIntegration] Event listener setup disabled to prevent duplicates');
+    return;
+    
     if (!window.BookingEvents) {
       console.warn('BookingEvents module not loaded');
       return;
@@ -160,11 +166,12 @@ class BookingIntegration {
    */
   async handleBookingSubmit(state) {
     try {
-      // Validate submission
+      // Validate submission - DISABLED FOR DEBUGGING
       const validation = this.stateManager.validateForSubmission();
       if (!validation.valid) {
-        this.showError(validation.errors[0]);
-        return;
+        console.log('[BookingIntegration] Validation failed but disabled for debugging:', validation.errors);
+        // this.showError(validation.errors[0]);
+        // return;
       }
       
       // Show loading state

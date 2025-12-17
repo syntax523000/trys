@@ -53,31 +53,27 @@
     </div>
   </header>
 
+  <!-- Dashboard Header - Fixed below navbar -->
+  <div class="dashboard-header-fixed"
+    style="background: #f5f5f5; position: sticky; top: 58px; z-index: 500; padding: 1rem 2rem; border-bottom: 1px solid #e0e0e0; width: 100%;">
+    <div style="max-width: 100%; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h1 class="dashboard-title" style="margin: 0; font-size: 1.5rem;">
+          👨‍💼 Admin Dashboard
+        </h1>
+        <p style="color: var(--gray-600); margin-top: 0.25rem; font-size: 1rem; margin-bottom: 0;">
+          Manage bookings, customers, and appointments
+        </p>
+      </div>
+    </div>
+  </div>
+
   <main>
     <div class="container-lg" id="adminDashboard">
-      <!-- Welcome Header -->
-      <div class="dashboard-header"
-        style="background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(222, 222, 222, 0.7)); border: none; margin-bottom: 2rem; display:flex; justify-content:space-between; align-items:center;">
-        <div>
-          <h1 class="dashboard-title" style="margin: 0;">
-            👨‍💼 Admin Dashboard
-          </h1>
-          <p style="color: var(--gray-600); margin-top: 0.5rem; font-size: 1.125rem;">
-            Manage bookings, customers, and appointments
-          </p>
-        </div>
-        <div>
-          <button id="repairDataBtn" class="btn btn-sm btn-outline"
-            style="border-color: #ff9800; color: #ff9800; background:white;">
-            🛠️ Repair Data
-          </button>
-        </div>
-      </div>
-
       <div style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem;" class="admin-layout" id="adminLayout">
         <!-- Sidebar -->
         <div class="sidebar"
-          style="background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem; height: fit-content; position: sticky; top: 100px;">
+          style="background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 1.5rem; height: fit-content;">
           <ul class="sidebar-menu" style="list-style: none; padding: 0; margin: 0;">
             <li style="margin-bottom: 0.5rem;">
               <a href="#" data-view="overview" class="active"
@@ -116,6 +112,7 @@
               </div>
               <div id="submenu-management" class="sidebar-submenu">
                 <a href="#" data-view="customers">👥 Customer Management</a>
+                <a href="#" data-view="groomerWorkload">⚖️ Groomer Workload</a>
                 <a href="#" data-view="bookinghistory">📖 Booking History</a>
                 <a href="#" data-view="gallery">📸 Featured Gallery</a>
               </div>
@@ -304,6 +301,34 @@
             </div>
           </div>
 
+          <!-- Groomer Workload Section -->
+          <div id="groomerWorkloadView" style="display: none;">
+            <h2 style="margin-bottom: 1.5rem; color: var(--gray-900);">⚖️ Groomer Workload Distribution</h2>
+            <p style="color: var(--gray-600); margin-bottom: 2rem;">Monitor fair distribution of bookings across all groomers. The system automatically assigns bookings to groomers with the least workload.</p>
+            
+            <!-- Date Selector -->
+            <div class="card" style="margin-bottom: 2rem; padding: 1.5rem;">
+              <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <label style="font-weight: 600; color: var(--gray-900);">View Date:</label>
+                <input type="date" id="workloadDatePicker" class="form-input" style="width: auto;" onchange="loadGroomerWorkload()">
+                <button class="btn btn-outline btn-sm" onclick="setWorkloadDateToday()">Today</button>
+                <button class="btn btn-outline btn-sm" onclick="setWorkloadDateTomorrow()">Tomorrow</button>
+              </div>
+            </div>
+
+            <!-- Workload Stats -->
+            <div id="groomerWorkloadStats" style="margin-bottom: 2rem;">
+              <!-- Stats will be loaded here -->
+            </div>
+
+            <!-- Groomer Cards -->
+            <div id="groomerWorkloadCards">
+              <!-- Groomer workload cards will be loaded here -->
+            </div>
+
+
+          </div>
+
           <!-- Add-ons Management Section -->
           <div id="addonsView" style="display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
@@ -404,25 +429,6 @@
   <script type="module">
     import { getCurrentUser, setCurrentUser } from './js/firebase-db.js';
     import { ref, update } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-database.js";
-
-    document.getElementById('repairDataBtn')?.addEventListener('click', async () => {
-      if (confirm('This will fix missing packages (e.g. Single Service) by adding them to the database. Continue?')) {
-        const btn = document.getElementById('repairDataBtn');
-        const originalText = btn.innerText;
-        btn.innerText = 'Fixing...';
-        btn.disabled = true;
-        try {
-          await initializeFirebaseData();
-          alert('Data repair complete. Please refresh the page.');
-          location.reload();
-        } catch (e) {
-          console.error(e);
-          alert('Error: ' + e.message);
-          btn.innerText = originalText;
-          btn.disabled = false;
-        }
-      }
-    });
 
     // Helper for dev: Promote self to admin
     window.promoteMeToAdmin = async function () {

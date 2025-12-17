@@ -363,11 +363,15 @@ function setupSidebarNavigation() {
   const menuItems = document.querySelectorAll('.sidebar-menu a');
   menuItems.forEach(item => {
     item.addEventListener('click', function (e) {
-      e.preventDefault();
       const view = this.dataset.view;
-      if (view) {
+      const href = this.getAttribute('href');
+      
+      // Only prevent default for internal view switches, not external links
+      if (view && href === '#') {
+        e.preventDefault();
         switchView(view);
       }
+      // Let external links (like walk-in) navigate normally
     });
   });
 }
@@ -384,6 +388,8 @@ function switchView(view) {
   if (inprogressView) inprogressView.style.display = 'none';
   document.getElementById('calendarView').style.display = 'none';
   document.getElementById('customersView').style.display = 'none';
+  const groomerWorkloadView = document.getElementById('groomerWorkloadView');
+  if (groomerWorkloadView) groomerWorkloadView.style.display = 'none';
   document.getElementById('groomerAbsencesView').style.display = 'none';
   document.getElementById('galleryView').style.display = 'none';
   const addonsView = document.getElementById('addonsView');
@@ -392,6 +398,11 @@ function switchView(view) {
   if (accountView) {
     accountView.style.display = 'none';
   }
+  // Hide history views
+  const historyView = document.getElementById('historyView');
+  if (historyView) historyView.style.display = 'none';
+  const bookinghistoryView = document.getElementById('bookinghistoryView');
+  if (bookinghistoryView) bookinghistoryView.style.display = 'none';
 
   // Update active menu item
   document.querySelectorAll('.sidebar-menu a').forEach(item => {
@@ -431,6 +442,10 @@ function switchView(view) {
     case 'customers':
       document.getElementById('customersView').style.display = 'block';
       loadCustomerManagement();
+      break;
+    case 'groomerWorkload':
+      document.getElementById('groomerWorkloadView').style.display = 'block';
+      loadGroomerWorkloadView();
       break;
     case 'addons':
       if (addonsView) {
@@ -886,6 +901,8 @@ function renderPendingBookingsTable(bookings) {
   const sortedBookings = [...bookings];
   const sortBy = adminState.pendingSortBy || 'date';
   const sortOrder = adminState.pendingSortOrder || 'asc';
+  
+  console.log('[loadPendingBookings] Sorting with:', { sortBy, sortOrder, bookingsCount: bookings.length });
 
   sortedBookings.sort((a, b) => {
     let aValue, bValue;
@@ -1070,14 +1087,18 @@ window.changePendingPageSize = function (size) {
 
 // Window handlers for pending sorting
 window.changePendingSortField = function (field) {
+  console.log('[changePendingSortField] Changing sort field to:', field);
   adminState.pendingSortBy = field;
   adminState.pendingPage = 1;
+  console.log('[changePendingSortField] New adminState:', { sortBy: adminState.pendingSortBy, sortOrder: adminState.pendingSortOrder });
   loadPendingBookings();
 };
 
 window.changePendingSortOrder = function (order) {
+  console.log('[changePendingSortOrder] Changing sort order to:', order);
   adminState.pendingSortOrder = order;
   adminState.pendingPage = 1;
+  console.log('[changePendingSortOrder] New adminState:', { sortBy: adminState.pendingSortBy, sortOrder: adminState.pendingSortOrder });
   loadPendingBookings();
 };
 
@@ -1858,10 +1879,33 @@ async function openBookingDetail(bookingId) {
     ? getBookingDisplayCode(booking)
     : booking.id;
 
-  // Calculate total price with add-ons
-  const packagePrice = booking.cost?.packagePrice || 0;
+  // Calculate total price with add-ons and single services
+  const isSingleService = booking.packageId === 'single-service';
+  const packagePrice = isSingleService ? 0 : (booking.cost?.packagePrice || 0);
+  
+  // Calculate single services total
+  let servicesTotal = 0;
+  if (isSingleService) {
+    const costServices = booking.cost?.services || [];
+    servicesTotal = costServices.reduce((sum, s) => sum + (s.price || 0), 0);
+    
+    // Fallback: calculate from booking.singleServices if cost.services is empty
+    if (servicesTotal === 0 && booking.singleServices?.length > 0) {
+      const pricing = window.SINGLE_SERVICE_PRICING || {};
+      booking.singleServices.forEach(serviceId => {
+        const serviceInfo = pricing[serviceId];
+        if (serviceInfo?.tiers) {
+          const weightLabel = booking.petWeight || '';
+          const isSmall = weightLabel.includes('5kg') || weightLabel.includes('below');
+          const tier = isSmall ? serviceInfo.tiers.small : serviceInfo.tiers.large;
+          servicesTotal += tier?.price || 0;
+        }
+      });
+    }
+  }
+  
   const addOnsTotal = (booking.addOns || []).reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
-  const currentTotal = packagePrice + addOnsTotal;
+  const currentTotal = packagePrice + servicesTotal + addOnsTotal;
 
   // Calculate remaining balance after booking fee
   const bookingFee = booking.cost?.bookingFee || 0;
@@ -1963,6 +2007,28 @@ async function openBookingDetail(bookingId) {
     ${addonsHtml}
 
     ${booking.bookingNotes && booking.bookingNotes.trim() ? `<p><strong>Preferred Cut/Notes:</strong> <span style="background: #e8f5e9; padding: 0.25rem 0.5rem; border-radius: 0.25rem; color: #2e7d32; font-weight: 600;">✂️ ${escapeHtml(booking.bookingNotes)}</span></p>` : ''}
+    
+    ${booking.vaccinationProofImage ? `
+      <div style="margin: 1rem 0;">
+        <p style="margin-bottom: 0.5rem;"><strong>📷 Vaccination Proof:</strong></p>
+        <img src="${booking.vaccinationProofImage}" alt="Vaccination Proof" 
+          style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 2px solid #4CAF50; cursor: pointer;"
+          onclick="window.openAdminVaccinationLightbox('${booking.id}')">
+      </div>
+    ` : ''}
+    
+    <!-- Proof of Payment Section -->
+    <div style="margin: 1rem 0; padding: 1rem; background: ${booking.proofOfPaymentImage ? '#e3f2fd' : '#fff3e0'}; border-radius: 8px; border: 1px solid ${booking.proofOfPaymentImage ? '#2196F3' : '#ff9800'};">
+      <p style="margin-bottom: 0.5rem; font-weight: 600;"><strong>💳 Proof of Payment (GCash):</strong></p>
+      ${booking.proofOfPaymentImage ? `
+        <img src="${booking.proofOfPaymentImage}" alt="Proof of Payment" 
+          style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 2px solid #2196F3; cursor: pointer;"
+          onclick="window.openAdminProofOfPaymentLightbox('${booking.id}')">
+        <p style="color: #2e7d32; font-size: 0.85rem; margin-top: 0.5rem;">✓ Payment proof uploaded by customer</p>
+      ` : `
+        <p style="color: #f57c00; font-size: 0.9rem;">⚠️ No payment proof uploaded yet</p>
+      `}
+    </div>
     
     ${generatePriceBreakdown(booking, pkg)}
     <p>
@@ -3262,10 +3328,12 @@ async function openAddBookingFeeModal(bookingId) {
     ? getBookingDisplayCode(booking)
     : (booking.shortId || booking.id);
 
-  // Calculate subtotal
-  const packagePrice = booking.cost?.packagePrice || booking.totalPrice || 0;
+  // Calculate subtotal (handle single service bookings)
+  const isSingleServiceBooking = booking.packageId === 'single-service';
+  const packagePrice = isSingleServiceBooking ? 0 : (booking.cost?.packagePrice || booking.totalPrice || 0);
+  const servicesTotal = (booking.cost?.services || []).reduce((sum, s) => sum + (s.price || 0), 0);
   const addOnsTotal = (booking.addOns || []).reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
-  const subtotal = packagePrice + addOnsTotal;
+  const subtotal = packagePrice + servicesTotal + addOnsTotal;
 
   // Get current booking fee
   const currentFee = booking.cost?.bookingFee || 0;
@@ -3458,10 +3526,12 @@ async function confirmBooking(bookingId) {
     booking.cost = {};
   }
 
-  // Calculate and store price breakdown
-  const packagePrice = booking.cost.packagePrice || booking.totalPrice || 0;
+  // Calculate and store price breakdown (handle single service bookings)
+  const isSingleServiceBooking = booking.packageId === 'single-service';
+  const packagePrice = isSingleServiceBooking ? 0 : (booking.cost.packagePrice || booking.totalPrice || 0);
+  const servicesTotal = (booking.cost?.services || []).reduce((sum, s) => sum + (s.price || 0), 0);
   const addOnsTotal = (booking.addOns || []).reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
-  booking.cost.subtotal = packagePrice + addOnsTotal;
+  booking.cost.subtotal = packagePrice + servicesTotal + addOnsTotal;
   booking.cost.totalAmount = booking.cost.subtotal;
 
   // Booking fee doesn't change total
@@ -5122,24 +5192,42 @@ window.openAddonsModal = async function (bookingId) {
         `).join('')
     : `<p style="color:#9ca3af;text-align:center;font-style:italic;padding:1rem;">No add-ons yet.</p>`;
 
-  // Calculate prices
-  const packagePrice = booking.cost?.packagePrice || booking.totalPrice || 0;
+  // Calculate prices (handle single service bookings)
+  const isSingleServiceBooking = booking.packageId === 'single-service';
+  const packagePrice = isSingleServiceBooking ? 0 : (booking.cost?.packagePrice || booking.totalPrice || 0);
+  const servicesTotal = (booking.cost?.services || []).reduce((sum, s) => sum + (s.price || 0), 0);
   const addOnsTotal = booking.addOns?.reduce((sum, a) => sum + (a.price || 0), 0) || 0;
-  const subtotal = packagePrice + addOnsTotal;
+  const subtotal = packagePrice + servicesTotal + addOnsTotal;
   const bookingFee = booking.cost?.bookingFee || booking.bookingFee || 0;
   const remainingBalance = Math.max(0, subtotal - bookingFee);
 
   // Create content as HTML element instead of string
   const contentElement = document.createElement('div');
   
-  // Display price breakdown at the top (correct order: Package -> Add-ons -> Subtotal -> Fee -> Balance)
+  // Display price breakdown at the top (correct order: Package/Services -> Add-ons -> Subtotal -> Fee -> Balance)
   const isPaidStatus = ['confirmed', 'completed', 'inProgress', 'in progress'].includes((booking.status || '').toLowerCase());
+  const singleServicesArray = booking.cost?.services || [];
   const priceBreakdownDisplay = `
     <div style="background:#f9fafb;padding:1rem;border-radius:10px;margin-bottom:1.5rem;border:1px solid #e5e7eb;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <span style="font-weight:500;color:#374151;">Package Price</span>
-        <span style="font-weight:600;color:#111827;">${formatCurrency(packagePrice)}</span>
-      </div>
+      ${isSingleServiceBooking && servicesTotal > 0 ? `
+        <div style="margin-bottom:0.5rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem;">
+            <span style="font-weight:500;color:#374151;">Single Services</span>
+            <span style="font-weight:600;color:#111827;">${formatCurrency(servicesTotal)}</span>
+          </div>
+          ${singleServicesArray.map(s => `
+            <div style="display:flex;justify-content:space-between;padding-left:0.75rem;font-size:0.9rem;">
+              <span style="color:#6b7280;">• ${escapeHtml(s.label || s.serviceId || 'Service')}</span>
+              <span style="color:#374151;">${formatCurrency(s.price || 0)}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+          <span style="font-weight:500;color:#374151;">Package Price</span>
+          <span style="font-weight:600;color:#111827;">${formatCurrency(packagePrice)}</span>
+        </div>
+      `}
       ${addOnsTotal > 0 ? `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
           <span style="font-weight:500;color:#374151;">Add-ons Total</span>
@@ -5212,9 +5300,40 @@ window.openSimpleBookingView = async function (bookingId) {
 
   // Calculate prices
   const cost = booking.cost || {};
-  const packagePrice = cost.packagePrice || booking.totalPrice || 0;
+  const isSingleService = booking.packageId === 'single-service';
+  
+  // For single service: packagePrice should be 0, use servicesTotal instead
+  // For packages: use cost.packagePrice or booking.totalPrice
+  const packagePrice = isSingleService ? 0 : (cost.packagePrice || booking.totalPrice || 0);
+  
+  // Calculate single services total from cost.services or booking.singleServices
+  let servicesTotal = 0;
+  let singleServicesArray = [];
+  if (isSingleService) {
+    singleServicesArray = cost.services || [];
+    servicesTotal = singleServicesArray.reduce((sum, s) => sum + (s.price || 0), 0);
+    
+    // Fallback: calculate from booking.singleServices if cost.services is empty
+    if (servicesTotal === 0 && booking.singleServices?.length > 0) {
+      const pricing = window.SINGLE_SERVICE_PRICING || {};
+      singleServicesArray = booking.singleServices.map(serviceId => {
+        const serviceInfo = pricing[serviceId];
+        const label = serviceInfo?.label || serviceId;
+        let price = 0;
+        if (serviceInfo?.tiers) {
+          const weightLabel = booking.petWeight || '';
+          const isSmall = weightLabel.includes('5kg') || weightLabel.includes('below');
+          const tier = isSmall ? serviceInfo.tiers.small : serviceInfo.tiers.large;
+          price = tier?.price || 0;
+        }
+        return { label, price, serviceId };
+      });
+      servicesTotal = singleServicesArray.reduce((sum, s) => sum + (s.price || 0), 0);
+    }
+  }
+  
   const addOnsTotal = booking.addOns?.reduce((sum, a) => sum + (a.price || 0), 0) || 0;
-  const subtotal = packagePrice + addOnsTotal;
+  const subtotal = packagePrice + servicesTotal + addOnsTotal;
   const bookingFee = cost.bookingFee || 0;
   const statusLower = (booking.status || '').toLowerCase();
   const isPaidStatus = ['confirmed', 'completed', 'inprogress', 'in progress'].includes(statusLower);
@@ -5294,10 +5413,24 @@ window.openSimpleBookingView = async function (bookingId) {
 
                     <!-- Price Breakdown -->
                     <div style="background:#f9fafb;padding:1rem;border-radius:10px;margin-top:1rem;border:1px solid #e5e7eb;">
+                        ${isSingleService && servicesTotal > 0 ? `
+                        <div style="margin-bottom:0.4rem;">
+                            <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+                                <span style="color:#374151;font-weight:500;">Single Services</span>
+                                <span style="font-weight:600;">${formatCurrency(servicesTotal)}</span>
+                            </div>
+                            ${singleServicesArray.map(s => `
+                            <div style="display:flex;justify-content:space-between;padding-left:0.75rem;font-size:0.9rem;">
+                                <span style="color:#6b7280;">• ${escapeHtml(s.label || s.serviceId || 'Service')}</span>
+                                <span style="color:#374151;">${formatCurrency(s.price || 0)}</span>
+                            </div>`).join('')}
+                        </div>
+                        ` : `
                         <div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">
                             <span style="color:#374151;">Package Price</span>
                             <span style="font-weight:600;">${formatCurrency(packagePrice)}</span>
                         </div>
+                        `}
                         ${addOnsTotal > 0 ? `
                         <div style="display:flex;justify-content:space-between;margin-bottom:0.4rem;">
                             <span style="color:#374151;">Add-ons</span>
@@ -6071,14 +6204,16 @@ async function openRevenueDetailsModal() {
 
   const bookingDetails = revenueBookings.map(booking => {
     const cost = booking.cost || {};
-    const packagePrice = parseFloat(cost.packagePrice) || 0;
+    const isSingleServiceBooking = booking.packageId === 'single-service';
+    const packagePrice = isSingleServiceBooking ? 0 : (parseFloat(cost.packagePrice) || 0);
+    const servicesTotal = (cost.services || []).reduce((sum, s) => sum + (parseFloat(s.price) || 0), 0);
     const addOnsTotal = (booking.addOns || []).reduce((sum, addon) => sum + (parseFloat(addon.price) || 0), 0);
     const bookingFee = parseFloat(cost.bookingFee) || 100;
     // Use cost.totalAmount if available, otherwise calculate from components
-    const totalPrice = parseFloat(cost.totalAmount) || parseFloat(booking.totalPrice) || (packagePrice + addOnsTotal);
+    const totalPrice = parseFloat(cost.totalAmount) || parseFloat(booking.totalPrice) || (packagePrice + servicesTotal + addOnsTotal);
 
     totalRevenue += totalPrice;
-    totalPackages += packagePrice;
+    totalPackages += packagePrice + servicesTotal; // Include services in package total for revenue
     totalAddOns += addOnsTotal;
     totalBookingFees += bookingFee;
 
@@ -6087,7 +6222,7 @@ async function openRevenueDetailsModal() {
       customer: booking.ownerName || booking.customerName || '—',
       pet: booking.petName || '—',
       package: booking.packageName || '—',
-      packagePrice,
+      packagePrice: packagePrice + servicesTotal, // Show combined for display
       addOnsTotal,
       bookingFee,
       totalPrice,
@@ -6157,3 +6292,514 @@ async function openRevenueDetailsModal() {
   showModal(modalContent, { maxWidth: '1000px' });
 }
 window.openRevenueDetailsModal = openRevenueDetailsModal;
+
+// ============================================
+// Groomer Workload Management
+// ============================================
+
+// Load groomer workload view
+async function loadGroomerWorkloadView() {
+  // Set default date to today
+  const today = new Date().toISOString().split('T')[0];
+  const datePicker = document.getElementById('workloadDatePicker');
+  if (datePicker && !datePicker.value) {
+    datePicker.value = today;
+  }
+  
+  await loadGroomerWorkload();
+}
+
+// Set workload date to today
+function setWorkloadDateToday() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('workloadDatePicker').value = today;
+  loadGroomerWorkload();
+}
+
+// Set workload date to tomorrow
+function setWorkloadDateTomorrow() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  document.getElementById('workloadDatePicker').value = tomorrowStr;
+  loadGroomerWorkload();
+}
+
+// Load groomer workload for selected date
+async function loadGroomerWorkload() {
+  const selectedDate = document.getElementById('workloadDatePicker').value;
+  if (!selectedDate) return;
+
+  try {
+    // Get all groomers and bookings
+    const groomers = (typeof getGroomers === 'function') ? await getGroomers() : [];
+    const bookings = (typeof getBookings === 'function') ? await getBookings() : [];
+    
+    if (!Array.isArray(groomers) || groomers.length === 0) {
+      document.getElementById('groomerWorkloadCards').innerHTML = `
+        <div class="card" style="text-align: center; padding: 3rem;">
+          <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">👥</div>
+          <p style="color: var(--gray-600);">No groomers found</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Calculate workload stats for each groomer
+    const groomerStats = await Promise.all(groomers.map(async (groomer) => {
+      // Get daily bookings for the selected date
+      const dailyBookings = bookings.filter(b => 
+        b.groomerId === groomer.id && 
+        b.date === selectedDate &&
+        !['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes((b.status || '').toLowerCase())
+      );
+
+      // Get total bookings (all time)
+      const totalBookings = bookings.filter(b => 
+        b.groomerId === groomer.id &&
+        !['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes((b.status || '').toLowerCase())
+      );
+
+      // Check capacity and availability
+      const hasCapacity = (typeof groomerHasCapacity === 'function') ? await groomerHasCapacity(groomer.id, selectedDate) : true;
+      const isAbsent = (typeof isGroomerAbsent === 'function') ? isGroomerAbsent(groomer.id, selectedDate) : false;
+      
+      const maxDaily = groomer.maxDailyBookings || 3;
+      const availableSlots = Math.max(0, maxDaily - dailyBookings.length);
+
+      return {
+        groomer,
+        dailyBookings,
+        totalBookings: totalBookings.length,
+        dailyCount: dailyBookings.length,
+        maxDaily,
+        availableSlots,
+        hasCapacity,
+        isAbsent,
+        utilizationRate: maxDaily > 0 ? (dailyBookings.length / maxDaily) * 100 : 0
+      };
+    }));
+
+    // Render workload stats
+    renderWorkloadStats(groomerStats, selectedDate);
+    
+    // Render groomer cards
+    renderGroomerWorkloadCards(groomerStats, selectedDate);
+
+  } catch (error) {
+    console.error('Error loading groomer workload:', error);
+    document.getElementById('groomerWorkloadCards').innerHTML = `
+      <div class="card" style="text-align: center; padding: 3rem;">
+        <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.5;">⚠️</div>
+        <p style="color: var(--gray-600);">Error loading workload data</p>
+      </div>
+    `;
+  }
+}
+
+// Render workload statistics
+function renderWorkloadStats(groomerStats, selectedDate) {
+  const container = document.getElementById('groomerWorkloadStats');
+  if (!container) return;
+
+  const totalGroomers = groomerStats.length;
+  const activeGroomers = groomerStats.filter(g => !g.isAbsent).length;
+  const totalDailyBookings = groomerStats.reduce((sum, g) => sum + g.dailyCount, 0);
+  const totalCapacity = groomerStats.reduce((sum, g) => sum + g.maxDaily, 0);
+  const averageUtilization = totalGroomers > 0 ? groomerStats.reduce((sum, g) => sum + g.utilizationRate, 0) / totalGroomers : 0;
+  
+  // Find most and least busy groomers based on total historical bookings (for consistency with priority)
+  const activeStats = groomerStats.filter(g => !g.isAbsent);
+  const mostBusy = activeStats.length > 0 ? activeStats.reduce((max, g) => g.totalBookings > max.totalBookings ? g : max) : null;
+  const leastBusy = activeStats.length > 0 ? activeStats.reduce((min, g) => g.totalBookings < min.totalBookings ? g : min) : null;
+
+  const dateFormatted = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  container.innerHTML = `
+    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+      <div class="stat-card" style="background: white; color: #000; border: 2px solid #000;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">👥</div>
+        <div class="stat-value" style="font-size: 2rem; font-weight: 700;">${activeGroomers}/${totalGroomers}</div>
+        <div class="stat-label">Active Groomers</div>
+      </div>
+      
+      <div class="stat-card" style="background: white; color: #000; border: 2px solid #000;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📅</div>
+        <div class="stat-value" style="font-size: 2rem; font-weight: 700;">${totalDailyBookings}</div>
+        <div class="stat-label">Total Bookings</div>
+      </div>
+      
+      <div class="stat-card" style="background: white; color: #000; border: 2px solid #000;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">⚡</div>
+        <div class="stat-value" style="font-size: 2rem; font-weight: 700;">${totalCapacity - totalDailyBookings}</div>
+        <div class="stat-label">Available Slots</div>
+      </div>
+      
+      <div class="stat-card" style="background: white; color: #000; border: 2px solid #000;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📊</div>
+        <div class="stat-value" style="font-size: 2rem; font-weight: 700;">${averageUtilization.toFixed(0)}%</div>
+        <div class="stat-label">Avg Utilization</div>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #17a2b8;">
+      <h4 style="margin-top: 0; color: #0c5460;">📈 Workload Summary for ${dateFormatted}</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+        ${mostBusy ? `
+          <div>
+            <p style="margin: 0.5rem 0; color: #0c5460;"><strong>Most Busy (Total):</strong> ${escapeHtml(mostBusy.groomer.name)} (${mostBusy.totalBookings} total bookings, ${mostBusy.dailyCount}/${mostBusy.maxDaily} today)</p>
+          </div>
+        ` : ''}
+        ${leastBusy ? `
+          <div>
+            <p style="margin: 0.5rem 0; color: #0c5460;"><strong>Least Busy (Total):</strong> ${escapeHtml(leastBusy.groomer.name)} (${leastBusy.totalBookings} total bookings, ${leastBusy.dailyCount}/${leastBusy.maxDaily} today)</p>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+// Render groomer workload cards
+function renderGroomerWorkloadCards(groomerStats, selectedDate) {
+  const container = document.getElementById('groomerWorkloadCards');
+  if (!container) return;
+
+  // Sort by total historical bookings (ascending) for true fairness - least busy gets priority
+  const sortedStats = [...groomerStats].sort((a, b) => {
+    // Primary: Sort by total historical bookings (most fair)
+    if (a.totalBookings !== b.totalBookings) {
+      return a.totalBookings - b.totalBookings;
+    }
+    // Secondary: Sort by daily count if tied
+    if (a.dailyCount !== b.dailyCount) {
+      return a.dailyCount - b.dailyCount;
+    }
+    // Tertiary: Sort by name for consistency
+    return a.groomer.name.localeCompare(b.groomer.name);
+  });
+
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem;">
+      ${sortedStats.map((stat, index) => {
+        const { groomer, dailyBookings, dailyCount, maxDaily, availableSlots, hasCapacity, isAbsent, utilizationRate } = stat;
+        
+        // Determine card styling based on workload (black and white theme)
+        let cardColor = 'white';
+        let borderColor = '#000';
+        let statusIcon = '✅';
+        let statusText = 'Available';
+        let borderWidth = '2px';
+        
+        if (isAbsent) {
+          cardColor = '#f5f5f5';
+          borderColor = '#666';
+          statusIcon = '🚫';
+          statusText = 'Absent';
+          borderWidth = '2px';
+        } else if (utilizationRate >= 100) {
+          cardColor = '#000';
+          borderColor = '#000';
+          statusIcon = '🔴';
+          statusText = 'Full Capacity';
+          borderWidth = '3px';
+        } else if (utilizationRate >= 75) {
+          cardColor = '#333';
+          borderColor = '#000';
+          statusIcon = '🟡';
+          statusText = 'High Load';
+          borderWidth = '2px';
+        } else if (utilizationRate >= 50) {
+          cardColor = '#f8f8f8';
+          borderColor = '#000';
+          statusIcon = '🟠';
+          statusText = 'Moderate Load';
+          borderWidth = '2px';
+        } else {
+          cardColor = 'white';
+          borderColor = '#000';
+          statusIcon = '🟢';
+          statusText = 'Low Load';
+          borderWidth = '1px';
+        }
+
+        // Fairness ranking based on total historical bookings (most fair)
+        const rankSuffix = index === 0 ? 'st' : index === 1 ? 'nd' : index === 2 ? 'rd' : 'th';
+        const fairnessRank = `${index + 1}${rankSuffix} priority (${stat.totalBookings} total bookings)`;
+
+        return `
+          <div class="card" style="background: ${cardColor}; border: ${borderWidth} solid ${borderColor}; padding: 1.5rem; color: ${cardColor === '#000' || cardColor === '#333' ? 'white' : '#000'};">
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+              <div style="background: #000; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 1rem; border: 2px solid #000;">
+                ${groomer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+              </div>
+              <div style="flex: 1;">
+                <h4 style="margin: 0; color: var(--gray-900);">${escapeHtml(groomer.name)}</h4>
+                <p style="margin: 0.25rem 0 0 0; color: var(--gray-600); font-size: 0.9rem;">${statusIcon} ${statusText}</p>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--gray-900);">${dailyCount}/${maxDaily}</div>
+                <div style="font-size: 0.8rem; color: var(--gray-600);">bookings</div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.9rem; color: var(--gray-700);">Utilization</span>
+                <span style="font-size: 0.9rem; font-weight: 600; color: var(--gray-900);">${utilizationRate.toFixed(0)}%</span>
+              </div>
+              <div style="background: #e9ecef; height: 8px; border-radius: 4px; overflow: hidden;">
+                <div style="background: ${utilizationRate >= 100 ? '#dc3545' : utilizationRate >= 75 ? '#ffc107' : utilizationRate >= 50 ? '#17a2b8' : '#28a745'}; height: 100%; width: ${Math.min(utilizationRate, 100)}%; transition: width 0.3s ease;"></div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <div style="text-align: center; padding: 0.75rem; background: rgba(255, 255, 255, 0.7); border-radius: 6px;">
+                <div style="font-size: 1.2rem; font-weight: 600; color: var(--gray-900);">${availableSlots}</div>
+                <div style="font-size: 0.8rem; color: var(--gray-600);">Available Slots</div>
+              </div>
+              <div style="text-align: center; padding: 0.75rem; background: rgba(255, 255, 255, 0.7); border-radius: 6px;">
+                <div style="font-size: 1.2rem; font-weight: 600; color: var(--gray-900);">${stat.totalBookings}</div>
+                <div style="font-size: 0.8rem; color: var(--gray-600);">Total Bookings</div>
+              </div>
+            </div>
+
+            <div style="background: rgba(255, 255, 255, 0.8); padding: 1rem; border-radius: 6px; border-left: 4px solid ${index === 0 ? '#28a745' : '#6c757d'};">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.9rem; color: var(--gray-700);">Fair Assignment Priority</span>
+                <span style="font-size: 0.9rem; font-weight: 600; color: ${index === 0 ? '#28a745' : '#6c757d'};">
+                  ${fairnessRank} ${index === 0 ? '🏆' : ''}
+                </span>
+              </div>
+            </div>
+
+            ${dailyBookings.length > 0 ? `
+              <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1);">
+                <h5 style="margin: 0 0 0.75rem 0; color: var(--gray-900); font-size: 0.9rem;">Today's Bookings:</h5>
+                <div style="max-height: 120px; overflow-y: auto;">
+                  ${dailyBookings.map(booking => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: rgba(255, 255, 255, 0.6); border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.85rem;">
+                      <span>${escapeHtml(booking.petName)} (${escapeHtml(booking.customerName)})</span>
+                      <span style="font-weight: 600;">${formatTime(booking.time)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+// Make functions globally available
+window.loadGroomerWorkloadView = loadGroomerWorkloadView;
+window.setWorkloadDateToday = setWorkloadDateToday;
+window.setWorkloadDateTomorrow = setWorkloadDateTomorrow;
+window.loadGroomerWorkload = loadGroomerWorkload;
+
+
+// ==================== VACCINATION PROOF LIGHTBOX ====================
+
+// Open vaccination proof image in lightbox for admin view
+window.openAdminVaccinationLightbox = async function(bookingId) {
+  const bookings = await getBookings();
+  const booking = bookings.find(b => b.id === bookingId);
+  
+  if (!booking || !booking.vaccinationProofImage) {
+    console.warn('[Admin] No vaccination proof image found for booking:', bookingId);
+    return;
+  }
+  
+  // Create lightbox overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'adminVaccinationLightbox';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: pointer;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = booking.vaccinationProofImage;
+  img.alt = 'Vaccination Proof';
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  `;
+  
+  // Add title
+  const title = document.createElement('div');
+  title.style.cssText = `
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  `;
+  title.textContent = `📷 Vaccination Proof - ${booking.petName || 'Pet'}`;
+  
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '×';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  
+  overlay.appendChild(title);
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
+  
+  // Close on click
+  const closeHandler = () => {
+    document.body.removeChild(overlay);
+  };
+  
+  overlay.addEventListener('click', closeHandler);
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeHandler();
+  });
+  
+  // Close on Escape key
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      closeHandler();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+};
+
+
+// ==================== PROOF OF PAYMENT LIGHTBOX ====================
+
+// Open proof of payment image in lightbox for admin view
+window.openAdminProofOfPaymentLightbox = async function(bookingId) {
+  const bookings = await getBookings();
+  const booking = bookings.find(b => b.id === bookingId);
+  
+  if (!booking || !booking.proofOfPaymentImage) {
+    console.warn('[Admin] No proof of payment image found for booking:', bookingId);
+    return;
+  }
+  
+  // Create lightbox overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'adminProofOfPaymentLightbox';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: pointer;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = booking.proofOfPaymentImage;
+  img.alt = 'Proof of Payment';
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  `;
+  
+  // Add title
+  const title = document.createElement('div');
+  title.style.cssText = `
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  `;
+  title.textContent = `💳 Proof of Payment - ${booking.petName || 'Booking'} (${booking.customerName || 'Customer'})`;
+  
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '×';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  
+  overlay.appendChild(title);
+  overlay.appendChild(img);
+  overlay.appendChild(closeBtn);
+  document.body.appendChild(overlay);
+  
+  // Close on click
+  const closeHandler = () => {
+    document.body.removeChild(overlay);
+  };
+  
+  overlay.addEventListener('click', closeHandler);
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeHandler();
+  });
+  
+  // Close on Escape key
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      closeHandler();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+};

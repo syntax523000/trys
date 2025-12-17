@@ -704,7 +704,12 @@ async function openBookingDetailModal(bookingId) {
   // Generate price breakdown
   const cost = booking.cost || {};
   const bookingFee = cost.bookingFee || 100;
-  const packagePrice = cost.packagePrice || booking.totalPrice || 0;
+  const isSingleService = booking.packageId === 'single-service';
+  const packagePrice = isSingleService ? 0 : (cost.packagePrice || booking.totalPrice || 0);
+  
+  // Calculate single services total
+  const singleServicesArray = cost.services || [];
+  const servicesTotal = singleServicesArray.reduce((sum, s) => sum + (s.price || 0), 0);
   
   // Get add-ons
   let addOnsArray = [];
@@ -723,7 +728,7 @@ async function openBookingDetailModal(bookingId) {
     });
   }
   const addOnsTotal = addOnsArray.reduce((sum, addon) => sum + (addon.price || 0), 0);
-  const subtotal = packagePrice + addOnsTotal;
+  const subtotal = packagePrice + servicesTotal + addOnsTotal;
   const isPaidStatus = isBookingFeePaid(booking.status);
   const totalAmount = isPaidStatus ? Math.max(0, subtotal - bookingFee) : subtotal;
   
@@ -732,7 +737,20 @@ async function openBookingDetailModal(bookingId) {
     <div style="border-top: 2px solid var(--gray-200); margin-top: 1rem; padding-top: 1rem;">
       <h4 style="margin-bottom: 0.75rem; font-size: 1rem; color: var(--gray-900);">💰 Price Breakdown</h4>
       
-      ${packagePrice > 0 ? `
+      ${isSingleService && servicesTotal > 0 ? `
+        <div style="margin-bottom: 0.5rem;">
+          <div class="summary-item">
+            <span class="summary-label">🛁 Single Services:</span>
+            <span class="summary-value" style="font-weight: 600;">${formatCurrency(servicesTotal)}</span>
+          </div>
+          ${singleServicesArray.map(s => `
+            <div class="summary-item" style="margin-left: 1rem;">
+              <span class="summary-label" style="color: var(--gray-600);">• ${escapeHtml(s.label || s.serviceId || 'Service')}</span>
+              <span class="summary-value">${formatCurrency(s.price || 0)}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : packagePrice > 0 ? `
         <div class="summary-item">
           <span class="summary-label">📦 Package:</span>
           <span class="summary-value" style="font-weight: 600;">${formatCurrency(packagePrice)}</span>
@@ -751,7 +769,7 @@ async function openBookingDetailModal(bookingId) {
         </div>
       ` : ''}
       
-      ${(addOnsArray.length > 0 || isPaidStatus) ? `
+      ${(addOnsArray.length > 0 || isPaidStatus || isSingleService) ? `
         <div class="summary-item" style="border-top: 1px solid var(--gray-200); padding-top: 0.5rem; margin-top: 0.5rem;">
           <span class="summary-label" style="font-weight: 600;">Subtotal:</span>
           <span class="summary-value" style="font-weight: 700; font-size: 1.1rem;">${formatCurrency(subtotal)}</span>
@@ -830,6 +848,43 @@ async function openBookingDetailModal(bookingId) {
         <span class="summary-value" style="background: #f0f9f0; padding: 0.5rem; border-radius: 0.25rem; color: #2e7d32; font-weight: 500;">✂️ ${escapeHtml(booking.groomingNotes)}</span>
       </div>
     ` : ''}
+    ${booking.vaccinationProofImage ? `
+      <div class="summary-item" style="flex-direction: column; align-items: flex-start;">
+        <span class="summary-label" style="margin-bottom: 0.5rem;">📷 Vaccination Proof:</span>
+        <img src="${booking.vaccinationProofImage}" alt="Vaccination Proof" 
+          style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 2px solid #4CAF50; cursor: pointer;"
+          onclick="window.openVaccinationProofLightbox('${booking.id}')">
+      </div>
+    ` : ''}
+    
+    <!-- Proof of Payment Section -->
+    <div class="summary-item" style="flex-direction: column; align-items: flex-start; margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;">
+      <span class="summary-label" style="margin-bottom: 0.5rem; font-weight: 600;">💳 Proof of Payment (GCash):</span>
+      ${booking.proofOfPaymentImage ? `
+        <div style="position: relative; display: inline-block;">
+          <img src="${booking.proofOfPaymentImage}" alt="Proof of Payment" 
+            style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 2px solid #2196F3; cursor: pointer;"
+            onclick="window.openProofOfPaymentLightbox('${booking.id}')">
+          ${booking.status === 'pending' ? `
+            <button onclick="event.stopPropagation(); window.removeProofOfPayment('${booking.id}')" 
+              style="position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; background: #e74c3c; color: white; border: none; border-radius: 50%; cursor: pointer; font-size: 14px;">×</button>
+          ` : ''}
+        </div>
+        <p style="color: #2e7d32; font-size: 0.85rem; margin-top: 0.5rem;">✓ Payment proof uploaded</p>
+      ` : `
+        ${booking.status === 'pending' ? `
+          <p style="color: #666; font-size: 0.85rem; margin-bottom: 0.75rem;">Upload your GCash payment screenshot to confirm your booking</p>
+          <input type="file" id="proofOfPaymentInput-${booking.id}" accept="image/*" style="display: none;" 
+            onchange="window.handleProofOfPaymentUpload('${booking.id}', this)">
+          <button onclick="document.getElementById('proofOfPaymentInput-${booking.id}').click()" 
+            style="padding: 0.6rem 1rem; background: #2196F3; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📤</span> Upload Payment Proof
+          </button>
+        ` : `
+          <p style="color: #999; font-size: 0.85rem;">No payment proof uploaded</p>
+        `}
+      `}
+    </div>
     
     ${priceBreakdownHtml}
     
@@ -936,6 +991,315 @@ window.sortCustomerBookings = sortCustomerBookings;
 window.changeCustomerBookingPage = changeCustomerBookingPage;
 window.setRating = setRating;
 window.saveReview = saveReview;
+
+// Vaccination proof lightbox for viewing in booking details
+window.openVaccinationProofLightbox = async function(bookingId) {
+  let bookings = [];
+  try {
+    bookings = typeof getBookings === 'function' ? await getBookings() : [];
+  } catch (e) {
+    console.warn('Failed to get bookings for lightbox', e);
+    return;
+  }
+  
+  const booking = bookings.find(b => b.id === bookingId);
+  if (!booking || !booking.vaccinationProofImage) return;
+  
+  // Create lightbox overlay
+  const lightbox = document.createElement('div');
+  lightbox.id = 'vaccinationProofLightbox';
+  lightbox.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    cursor: pointer;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = booking.vaccinationProofImage;
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  `;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '×';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 24px;
+    cursor: pointer;
+    color: #333;
+  `;
+  
+  lightbox.appendChild(img);
+  lightbox.appendChild(closeBtn);
+  document.body.appendChild(lightbox);
+  
+  // Close on click
+  lightbox.addEventListener('click', function() {
+    document.body.removeChild(lightbox);
+  });
+};
+
+// ==================== PROOF OF PAYMENT FUNCTIONS ====================
+
+// Handle proof of payment image upload
+window.handleProofOfPaymentUpload = async function(bookingId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    if (typeof customAlert !== 'undefined') {
+      customAlert.warning('Invalid File', 'Please upload an image file (JPG, PNG, etc.)');
+    } else {
+      alert('Please upload an image file');
+    }
+    return;
+  }
+  
+  // Validate file size (max 5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    if (typeof customAlert !== 'undefined') {
+      customAlert.warning('File Too Large', 'Please upload an image smaller than 5MB');
+    } else {
+      alert('Please upload an image smaller than 5MB');
+    }
+    return;
+  }
+  
+  // Show loading
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay('Uploading payment proof...');
+  }
+  
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const base64Image = e.target.result;
+    
+    try {
+      // Get bookings and update
+      let bookings = typeof getBookings === 'function' ? await getBookings() : [];
+      const bookingIndex = bookings.findIndex(b => b.id === bookingId);
+      
+      if (bookingIndex === -1) {
+        if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        if (typeof customAlert !== 'undefined') {
+          customAlert.error('Error', 'Booking not found');
+        }
+        return;
+      }
+      
+      // Update booking with proof of payment
+      bookings[bookingIndex].proofOfPaymentImage = base64Image;
+      bookings[bookingIndex].proofOfPaymentUploadedAt = Date.now();
+      
+      // Save to Firebase
+      if (typeof updateBooking === 'function') {
+        await updateBooking(bookings[bookingIndex]);
+      } else if (typeof saveBookings === 'function') {
+        await saveBookings(bookings);
+      }
+      
+      // Log history
+      if (typeof logBookingHistory === 'function') {
+        logBookingHistory({
+          bookingId: bookingId,
+          action: 'Payment Proof Uploaded',
+          message: 'Customer uploaded proof of payment',
+          actor: 'customer'
+        });
+      }
+      
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      
+      // Close modal and refresh
+      if (typeof closeModal === 'function') closeModal();
+      
+      if (typeof customAlert !== 'undefined') {
+        await customAlert.success('Upload Successful', 'Your payment proof has been uploaded. The admin will review it shortly.');
+      }
+      
+      // Refresh bookings display
+      if (typeof renderCustomerBookings === 'function') {
+        renderCustomerBookings();
+      }
+      
+      console.log('[ProofOfPayment] Image uploaded successfully for booking:', bookingId);
+      
+    } catch (error) {
+      console.error('[ProofOfPayment] Upload error:', error);
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      if (typeof customAlert !== 'undefined') {
+        customAlert.error('Upload Failed', 'Failed to upload payment proof. Please try again.');
+      }
+    }
+  };
+  
+  reader.readAsDataURL(file);
+};
+
+// Remove proof of payment image
+window.removeProofOfPayment = async function(bookingId) {
+  const confirmed = typeof customAlert !== 'undefined' 
+    ? await customAlert.confirm('Remove Payment Proof', 'Are you sure you want to remove the payment proof?')
+    : confirm('Are you sure you want to remove the payment proof?');
+  
+  if (!confirmed) return;
+  
+  try {
+    if (typeof showLoadingOverlay === 'function') {
+      showLoadingOverlay('Removing...');
+    }
+    
+    let bookings = typeof getBookings === 'function' ? await getBookings() : [];
+    const bookingIndex = bookings.findIndex(b => b.id === bookingId);
+    
+    if (bookingIndex === -1) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      return;
+    }
+    
+    // Remove proof of payment
+    bookings[bookingIndex].proofOfPaymentImage = null;
+    bookings[bookingIndex].proofOfPaymentUploadedAt = null;
+    
+    // Save to Firebase
+    if (typeof updateBooking === 'function') {
+      await updateBooking(bookings[bookingIndex]);
+    } else if (typeof saveBookings === 'function') {
+      await saveBookings(bookings);
+    }
+    
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    
+    // Close modal and refresh
+    if (typeof closeModal === 'function') closeModal();
+    
+    // Refresh bookings display
+    if (typeof renderCustomerBookings === 'function') {
+      renderCustomerBookings();
+    }
+    
+    console.log('[ProofOfPayment] Image removed for booking:', bookingId);
+    
+  } catch (error) {
+    console.error('[ProofOfPayment] Remove error:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+  }
+};
+
+// Open proof of payment in lightbox
+window.openProofOfPaymentLightbox = async function(bookingId) {
+  let bookings = [];
+  try {
+    bookings = typeof getBookings === 'function' ? await getBookings() : [];
+  } catch (e) {
+    console.warn('Failed to get bookings for lightbox', e);
+    return;
+  }
+  
+  const booking = bookings.find(b => b.id === bookingId);
+  if (!booking || !booking.proofOfPaymentImage) return;
+  
+  // Create lightbox overlay
+  const lightbox = document.createElement('div');
+  lightbox.id = 'proofOfPaymentLightbox';
+  lightbox.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    cursor: pointer;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = booking.proofOfPaymentImage;
+  img.alt = 'Proof of Payment';
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  `;
+  
+  // Title
+  const title = document.createElement('div');
+  title.style.cssText = `
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  `;
+  title.textContent = `💳 Proof of Payment - ${booking.petName || 'Booking'}`;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '×';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 24px;
+    cursor: pointer;
+    color: #333;
+  `;
+  
+  lightbox.appendChild(title);
+  lightbox.appendChild(img);
+  lightbox.appendChild(closeBtn);
+  document.body.appendChild(lightbox);
+  
+  // Close on click
+  const closeHandler = () => {
+    document.body.removeChild(lightbox);
+  };
+  
+  lightbox.addEventListener('click', closeHandler);
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeHandler();
+  });
+  
+  // Close on Escape
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      closeHandler();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
+};
 
 let customerHistoryState = {
   page: 1,
@@ -1110,7 +1474,8 @@ async function renderCustomerBookingHistory() {
         const cost = booking.cost || {};
         const bookingFee = cost.bookingFee || 100;
         const isPaidStatus = isBookingFeePaid(booking.status);
-        const packagePrice = cost.packagePrice || 0;
+        const isSingleServiceBooking = booking.packageId === 'single-service';
+        const packagePrice = isSingleServiceBooking ? 0 : (cost.packagePrice || 0);
         
         // Get add-ons total
         let addOnsTotal = 0;
@@ -1290,14 +1655,15 @@ function renderCustomerHistoryFallback(bookings = []) {
       : booking.id;
 
     // Calculate the BALANCE TO PAY (what customer actually pays on visit)
-    // Formula: Subtotal (package + add-ons) - Booking Fee (if paid)
+    // Formula: Subtotal (package + add-ons + services) - Booking Fee (if paid)
     let balanceToPay = 0;
     const cost = booking.cost || {};
     const bookingFee = cost.bookingFee || 100;
     const isPaidStatus = isBookingFeePaid(booking.status);
     
-    // Calculate subtotal from package price + add-ons
-    const packagePrice = cost.packagePrice || 0;
+    // Calculate subtotal from package price + add-ons + single services
+    const isSingleServiceBooking = booking.packageId === 'single-service';
+    const packagePrice = isSingleServiceBooking ? 0 : (cost.packagePrice || 0);
     
     // Get add-ons total
     let addOnsTotal = 0;
@@ -1948,8 +2314,13 @@ async function openCustomerPricingBreakdownModal(bookingId) {
   const cost = booking.cost || {};
   const bookingFee = cost.bookingFee || 100;
   
-  // Get the base package price (without add-ons)
-  const packagePrice = cost.packagePrice || 0;
+  // Get the base package price (without add-ons) - handle single service bookings
+  const isSingleService = booking.packageId === 'single-service';
+  const packagePrice = isSingleService ? 0 : (cost.packagePrice || 0);
+  
+  // Get single services
+  const singleServicesArray = cost.services || [];
+  const servicesTotal = singleServicesArray.reduce((sum, service) => sum + (service.price || 0), 0);
   
   // Get add-ons - prioritize booking.addOns since that's where we store them
   let addOnsArray = [];
@@ -1976,7 +2347,6 @@ async function openCustomerPricingBreakdownModal(bookingId) {
   }
   
   const addOnsTotal = addOnsArray.reduce((sum, addon) => sum + (addon.price || 0), 0);
-  const servicesTotal = cost.services?.reduce((sum, service) => sum + (service.price || 0), 0) || 0;
   
   // Calculate correct total based on status
   // - For PENDING: Show full subtotal (customer hasn't paid booking fee yet)
@@ -2090,19 +2460,21 @@ async function openCustomerSpendingDetailsModal() {
 
   const bookingDetails = spendingBookings.map(booking => {
     const cost = booking.cost || {};
-    const packagePrice = cost.packagePrice || 0;
+    const isSingleServiceBooking = booking.packageId === 'single-service';
+    const packagePrice = isSingleServiceBooking ? 0 : (cost.packagePrice || 0);
+    const servicesTotal = (cost.services || []).reduce((sum, s) => sum + (s.price || 0), 0);
     const addOnsTotal = booking.addOns?.reduce((sum, addon) => sum + (addon.price || 0), 0) || 0;
-    const totalPrice = booking.totalPrice || (packagePrice + addOnsTotal);
+    const totalPrice = booking.totalPrice || (packagePrice + servicesTotal + addOnsTotal);
 
     totalSpent += totalPrice;
-    totalPackages += packagePrice;
+    totalPackages += packagePrice + servicesTotal; // Include services in package total
     totalAddOns += addOnsTotal;
 
     return {
       id: typeof getBookingDisplayCode === 'function' ? getBookingDisplayCode(booking) : booking.id,
       pet: booking.petName,
       package: booking.packageName,
-      packagePrice,
+      packagePrice: packagePrice + servicesTotal, // Show combined for display
       addOnsTotal,
       totalPrice,
       date: booking.date,

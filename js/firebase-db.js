@@ -314,6 +314,51 @@ async function createBooking(booking) {
   }
 }
 
+// Update a single booking in Firebase (for customer updates like proof of payment)
+async function updateBooking(booking) {
+  try {
+    const db = getDatabase();
+    if (!db) throw new Error('Firebase Database not initialized');
+    
+    if (!booking || !booking.id) {
+      throw new Error('Invalid booking: missing id');
+    }
+    
+    // Sanitize NaN values before saving
+    if (booking.totalPrice !== undefined && isNaN(booking.totalPrice)) {
+      console.warn(`Sanitizing NaN totalPrice for booking ${booking.id}`);
+      booking.totalPrice = booking.cost?.subtotal || 0;
+    }
+    if (booking.cost?.subtotal !== undefined && isNaN(booking.cost.subtotal)) {
+      console.warn(`Sanitizing NaN subtotal for booking ${booking.id}`);
+      booking.cost.subtotal = 0;
+    }
+    if (booking.cost?.balanceOnVisit !== undefined && isNaN(booking.cost.balanceOnVisit)) {
+      console.warn(`Sanitizing NaN balanceOnVisit for booking ${booking.id}`);
+      booking.cost.balanceOnVisit = 0;
+    }
+    
+    const bookingRef = ref(db, 'bookings/' + booking.id);
+    await set(bookingRef, booking);
+    
+    console.log('[updateBooking] Successfully updated booking:', booking.id);
+    
+    // Notify UI
+    try { 
+      window.dispatchEvent(new CustomEvent('booking:updated', { detail: booking })); 
+    } catch (e) { }
+    
+    return booking;
+  } catch (error) {
+    console.error('[updateBooking] Error updating booking:', error);
+    if (error && (error.code === 'PERMISSION_DENIED' || (error.message && error.message.toLowerCase().includes('permission')))) {
+      console.warn('Firebase write permission denied when updating booking.');
+      window.firebaseWriteDenied = true;
+    }
+    throw error;
+  }
+}
+
 // Save an uplift request with optional proof (dataURL). Uploads proof to Firebase Storage (if available)
 async function saveUpliftRequest(request) {
   try {
@@ -533,6 +578,7 @@ window.saveUsers = saveUsers;
 window.getBookings = getBookings;
 window.saveBookings = saveBookings;
 window.createBooking = createBooking;
+window.updateBooking = updateBooking;
 window.getPackages = getPackages;
 window.savePackages = savePackages;
 window.getGroomers = getGroomers;

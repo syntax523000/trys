@@ -18,16 +18,30 @@ let bookingData = {
   petWeight: '',
   medicalNotes: '',
   vaccinationNotes: '',
+  vaccinationProofImage: null, // Base64 image of vaccination proof
   addOns: [],
   bookingNotes: '',
   saveProfile: true,
-  singleServices: []
+  singleServices: [],
+  referenceCut: null
 };
 
 let currentStep = 1;
 const totalSteps = 5;
 const SINGLE_SERVICE_PACKAGE_ID = 'single-service';
 const SINGLE_SERVICE_OPTIONS = window.SINGLE_SERVICE_PRICING || {};
+
+// Prevent duplicate submissions
+let isSubmittingBooking = false;
+
+// Debounce updateSummary to prevent flickering during typing
+let updateSummaryTimeout = null;
+function debouncedUpdateSummary(delay = 300) {
+  clearTimeout(updateSummaryTimeout);
+  updateSummaryTimeout = setTimeout(() => {
+    updateSummary();
+  }, delay);
+}
 
 // Check if this is a reschedule operation
 let isRescheduleMode = false;
@@ -255,8 +269,19 @@ function updateAgeDropdownOptions() {
   // For single service: show all ages (including 5 months and below)
   // For other packages: show only 6 months and above
   let visibleOptions = allOptions;
+  console.log('[updateAgeDropdownOptions] Current packageId:', bookingData.packageId);
+  console.log('[updateAgeDropdownOptions] SINGLE_SERVICE_PACKAGE_ID:', SINGLE_SERVICE_PACKAGE_ID);
+  
   if (bookingData.packageId && bookingData.packageId !== SINGLE_SERVICE_PACKAGE_ID) {
-    visibleOptions = allOptions.filter(opt => !opt.value || getAgeInMonths(opt.value) >= 6);
+    console.log('[updateAgeDropdownOptions] Filtering ages for full package - showing 6+ months only');
+    visibleOptions = allOptions.filter(opt => {
+      if (!opt.value) return true; // Keep "Select age..." option
+      const ageInMonths = getAgeInMonths(opt.value);
+      console.log(`[updateAgeDropdownOptions] Age "${opt.value}" = ${ageInMonths} months, include: ${ageInMonths >= 6}`);
+      return ageInMonths >= 6;
+    });
+  } else {
+    console.log('[updateAgeDropdownOptions] Showing all ages (single service or no package selected)');
   }
 
   // Rebuild the select options
@@ -293,6 +318,14 @@ async function initBooking() {
       const pk = getPackages();
       if (pk && typeof pk.then === 'function') await pk;
       console.log('[initBooking] Packages loaded via getPackages fallback');
+    }
+
+    // Check for package pre-selection from URL (from index.html Book Now buttons)
+    const urlParams = new URLSearchParams(window.location.search);
+    const preSelectedPackage = urlParams.get('package');
+    if (preSelectedPackage) {
+      console.log('[initBooking] Pre-selecting package from URL:', preSelectedPackage);
+      bookingData.packageId = preSelectedPackage;
     }
 
     // Restore booking data and step from sessionStorage if returning from auth
@@ -412,8 +445,8 @@ async function initBooking() {
         const autoLoad = sessionStorage.getItem('autoLoadProfile');
         if (autoLoad === 'true') {
           sessionStorage.removeItem('autoLoadProfile'); // Clear flag
-          // Trigger profile load which will jump to step 3
-          await handleProfileLoad();
+          // Trigger auto profile load which will jump to step 3
+          await handleAutoProfileLoad();
         }
       } catch (error) {
         console.warn('Could not load user profile:', error);
@@ -423,6 +456,23 @@ async function initBooking() {
 
     // Load packages (after listeners are set up)
     loadPackages();
+    
+    // Apply pre-selected package from URL if any
+    if (preSelectedPackage && bookingData.packageId === preSelectedPackage) {
+      setTimeout(() => {
+        // Select the package card in UI
+        document.querySelectorAll('.package-card').forEach(card => {
+          if (card.dataset.packageId === preSelectedPackage) {
+            card.classList.add('selected');
+            console.log('[initBooking] Pre-selected package card:', preSelectedPackage);
+          } else {
+            card.classList.remove('selected');
+          }
+        });
+        updateSummary();
+      }, 100); // Small delay to ensure DOM is ready
+    }
+    
     renderSingleServiceConfigurator();
     updateReferenceCutsVisibility();
     
@@ -489,11 +539,22 @@ async function initBooking() {
 
 // Setup event listeners
 function setupBookingListeners() {
+  // Check if already setup to avoid duplicates
+  if (window.bookingListenersSetup) {
+    console.log('[setupBookingListeners] Already setup, skipping');
+    return;
+  }
+  
+  console.log('[setupBookingListeners] Setting up legacy event listeners');
+  
   // Pet type selection
   const petCards = document.querySelectorAll('.pet-type-card');
+  console.log('[setupBookingListeners] Found', petCards.length, 'pet type cards');
   petCards.forEach(card => {
+    console.log('[setupBookingListeners] Setting up listener for pet card:', card.dataset.petType);
     card.addEventListener('click', function () {
       const petType = this.dataset.petType;
+      console.log('[PetTypeCard] Clicked pet type:', petType);
       selectPetType(petType);
       saveBookingDataToSession(); // Auto-save
     });
@@ -501,9 +562,12 @@ function setupBookingListeners() {
 
   // Package selection
   const packageCards = document.querySelectorAll('.package-card');
+  console.log('[setupBookingListeners] Found', packageCards.length, 'package cards');
   packageCards.forEach(card => {
+    console.log('[setupBookingListeners] Setting up listener for package card:', card.dataset.packageId);
     card.addEventListener('click', function () {
       const packageId = this.dataset.packageId;
+      console.log('[PackageCard] Clicked package card with ID:', packageId);
       selectPackage(packageId);
       saveBookingDataToSession(); // Auto-save
     });
@@ -571,6 +635,30 @@ function setupBookingListeners() {
       submitBooking(e);
     });
   }
+  
+  // Mark as setup to avoid duplicates
+  window.bookingListenersSetup = true;
+  console.log('[setupBookingListeners] Legacy event listeners setup complete');
+  
+  // Add global function for debugging
+  window.debugSubmitButton = function() {
+    console.log('=== MANUAL SUBMIT BUTTON DEBUG ===');
+    enableSubmitButton();
+  };
+  
+  // Add global function for checking submit button state
+  window.checkSubmitButton = function() {
+    const submitBtn = document.getElementById('submitBooking');
+    console.log('=== SUBMIT BUTTON STATE ===', {
+      found: !!submitBtn,
+      display: submitBtn?.style.display,
+      disabled: submitBtn?.disabled,
+      textContent: submitBtn?.textContent,
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      isVisible: submitBtn?.style.display !== 'none'
+    });
+  };
 }
 
 /**
@@ -598,8 +686,8 @@ function setupFormInputsWithStateSync() {
         // Update bookingData
         bookingData[fieldId] = this.value.trim();
         
-        // Trigger UI updates
-        updateSummary();
+        // Trigger UI updates (debounced to prevent flickering)
+        debouncedUpdateSummary();
         enableNextButton();
         
         // Auto-save to session
@@ -626,8 +714,8 @@ function setupFormInputsWithStateSync() {
         bookingData.contactNumber = value;
         this.setCustomValidity('');
         
-        // Trigger UI updates
-        updateSummary();
+        // Trigger UI updates (debounced to prevent flickering)
+        debouncedUpdateSummary();
         enableNextButton();
         
         // Auto-save to session
@@ -641,8 +729,8 @@ function setupFormInputsWithStateSync() {
         this.setCustomValidity('');
         bookingData.contactNumber = '';
         
-        // Trigger UI updates
-        updateSummary();
+        // Trigger UI updates (debounced to prevent flickering)
+        debouncedUpdateSummary();
         enableNextButton();
         
         // Auto-save to session
@@ -658,7 +746,7 @@ function setupFormInputsWithStateSync() {
       // Update bookingData
       bookingData.petAge = this.value;
       
-      // Trigger UI updates
+      // Trigger UI updates (immediate for dropdown selections)
       updateSummary();
       enableNextButton();
       
@@ -705,6 +793,7 @@ function setupFormInputsWithStateSync() {
       }
       updateSummary();
       saveBookingDataToSession();
+      enableSubmitButton();
     });
   }
   
@@ -716,6 +805,7 @@ function setupFormInputsWithStateSync() {
       }
       updateSummary();
       saveBookingDataToSession();
+      enableSubmitButton();
     });
   }
   
@@ -728,6 +818,7 @@ function setupFormInputsWithStateSync() {
       }
       updateSummary();
       saveBookingDataToSession();
+      enableSubmitButton();
     });
   }
   
@@ -767,8 +858,8 @@ function setupFormInputsWithStateSync() {
         // Update bookingData
         bookingData[fieldId] = this.value.trim();
         
-        // Trigger UI updates
-        updateSummary();
+        // Trigger UI updates (debounced to prevent flickering)
+        debouncedUpdateSummary();
         
         // Auto-save to session
         saveBookingDataToSession();
@@ -778,70 +869,174 @@ function setupFormInputsWithStateSync() {
 }
 
 async function handleProfileLoad() {
-  const user = await getCurrentUser();
-  if (!user) {
-    customAlert.warning('Not Logged In', 'Please log in first to load your profile.');
-    return;
+  // Show loading screen
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay('Loading your profile...');
   }
 
-  // Get profile from last booking
-  const allBookings = await getBookings();
-  const userBookings = Array.isArray(allBookings) ? allBookings.filter(b => b.userId === user.id) : [];
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.warning('Not Logged In', 'Please log in first to load your profile.');
+      return;
+    }
 
-  if (userBookings.length === 0) {
-    customAlert.show('No Profile Found', 'No saved profile yet. Complete the form once and tick "Save details" to reuse.', 'warning');
-    return;
+    // Get profile from last booking
+    const allBookings = await getBookings();
+    const userBookings = Array.isArray(allBookings) ? allBookings.filter(b => b.userId === user.id) : [];
+
+    if (userBookings.length === 0) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.show('No Profile Found', 'No saved profile yet. Complete the form once and tick "Save details" to reuse.', 'warning');
+      return;
+    }
+
+    // Get the most recent booking
+    const lastBooking = userBookings[userBookings.length - 1];
+
+    // Create profile object from last booking
+    const profile = {
+      ownerName: lastBooking.ownerName,
+      contactNumber: lastBooking.contactNumber,
+      address: lastBooking.ownerAddress,
+      petName: lastBooking.petName,
+      breed: lastBooking.petBreed,
+      age: lastBooking.petAge,
+      weight: lastBooking.petWeight,
+      medical: lastBooking.medicalNotes,
+      vaccinations: lastBooking.vaccinationNotes
+      // Note: addOns are NOT copied from previous bookings - customer must select them each time
+    };
+
+    // Load profile details to current step forms
+    applyProfileToForm(profile);
+
+    // Auto-fill pet type and package from last booking (but don't change steps)
+    bookingData.petType = lastBooking.petType;
+    bookingData.packageId = lastBooking.packageId;
+
+    // Update UI to reflect selection (if elements exist on current step)
+    document.querySelectorAll('.pet-type-card').forEach(card => {
+      if (card.dataset.petType === lastBooking.petType) {
+        card.classList.add('selected');
+      } else {
+        card.classList.remove('selected');
+      }
+    });
+
+    // Load packages if on package selection step
+    if (currentStep === 2) {
+      loadPackages();
+    }
+    
+    document.querySelectorAll('.package-card').forEach(card => {
+      if (card.dataset.packageId === lastBooking.packageId) {
+        card.classList.add('selected');
+      } else {
+        card.classList.remove('selected');
+      }
+    });
+
+    // Stay on current step - don't jump to step 3
+    // Only update the summary and enable next button if applicable
+    updateSummary();
+    enableSubmitButton();
+
+    // Hide loading screen
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    
+    customAlert.success('Profile Loaded!', 'Your saved details have been loaded successfully.');
+    
+  } catch (error) {
+    console.error('Error loading profile:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    customAlert.error('Load Failed', 'Could not load your profile. Please try again.');
+  }
+}
+
+// Auto Profile Load - for "Use Saved Details" from dashboard (includes step jumping)
+async function handleAutoProfileLoad() {
+  // Show loading screen
+  if (typeof showLoadingOverlay === 'function') {
+    showLoadingOverlay('Loading your profile...');
   }
 
-  // Get the most recent booking
-  const lastBooking = userBookings[userBookings.length - 1];
-
-  // Create profile object from last booking
-  const profile = {
-    ownerName: lastBooking.ownerName,
-    contactNumber: lastBooking.contactNumber,
-    address: lastBooking.ownerAddress,
-    petName: lastBooking.petName,
-    breed: lastBooking.petBreed,
-    age: lastBooking.petAge,
-    weight: lastBooking.petWeight,
-    medical: lastBooking.medicalNotes,
-    vaccinations: lastBooking.vaccinationNotes
-    // Note: addOns are NOT copied from previous bookings - customer must select them each time
-  };
-
-  // Load profile details
-  applyProfileToForm(profile);
-
-  // Auto-fill pet type and package from last booking
-  bookingData.petType = lastBooking.petType;
-  bookingData.packageId = lastBooking.packageId;
-
-  // Update UI to reflect selection
-  document.querySelectorAll('.pet-type-card').forEach(card => {
-    if (card.dataset.petType === lastBooking.petType) {
-      card.classList.add('selected');
-    } else {
-      card.classList.remove('selected');
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.warning('Not Logged In', 'Please log in first to load your profile.');
+      return;
     }
-  });
 
-  loadPackages();
-  document.querySelectorAll('.package-card').forEach(card => {
-    if (card.dataset.packageId === lastBooking.packageId) {
-      card.classList.add('selected');
-    } else {
-      card.classList.remove('selected');
+    // Get profile from last booking
+    const allBookings = await getBookings();
+    const userBookings = Array.isArray(allBookings) ? allBookings.filter(b => b.userId === user.id) : [];
+
+    if (userBookings.length === 0) {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.show('No Profile Found', 'No saved profile yet. Complete the form once and tick "Save details" to reuse.', 'warning');
+      return;
     }
-  });
 
-  // Jump directly to step 3 (Schedule)
-  showStep(3);
-  setupCalendarTimePicker().catch(err => console.error('Error rendering calendar:', err));
+    // Get the most recent booking
+    const lastBooking = userBookings[userBookings.length - 1];
 
-  updateSummary();
+    // Create profile object from last booking
+    const profile = {
+      ownerName: lastBooking.ownerName,
+      contactNumber: lastBooking.contactNumber,
+      address: lastBooking.ownerAddress,
+      petName: lastBooking.petName,
+      breed: lastBooking.petBreed,
+      age: lastBooking.petAge,
+      weight: lastBooking.petWeight,
+      medical: lastBooking.medicalNotes,
+      vaccinations: lastBooking.vaccinationNotes
+    };
 
-  customAlert.success('Profile Loaded!', 'Your saved details have been loaded successfully.');
+    // Load profile details
+    applyProfileToForm(profile);
+
+    // Auto-fill pet type and package from last booking
+    bookingData.petType = lastBooking.petType;
+    bookingData.packageId = lastBooking.packageId;
+
+    // Update UI to reflect selection
+    document.querySelectorAll('.pet-type-card').forEach(card => {
+      if (card.dataset.petType === lastBooking.petType) {
+        card.classList.add('selected');
+      } else {
+        card.classList.remove('selected');
+      }
+    });
+
+    loadPackages();
+    document.querySelectorAll('.package-card').forEach(card => {
+      if (card.dataset.packageId === lastBooking.packageId) {
+        card.classList.add('selected');
+      } else {
+        card.classList.remove('selected');
+      }
+    });
+
+    // Jump directly to step 5 (Details) for dashboard auto-load
+    showStep(5);
+
+    updateSummary();
+
+    // Hide loading screen with a small delay to ensure UI is ready
+    setTimeout(() => {
+      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      customAlert.success('Profile Loaded!', 'Your saved details have been loaded. Please review and update your information as needed.');
+    }, 500);
+    
+  } catch (error) {
+    console.error('Error auto-loading profile:', error);
+    if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+    customAlert.error('Load Failed', 'Could not load your profile. Please try again.');
+  }
 }
 
 // Quick Rebook - same as handleProfileLoad but for mobile quick access
@@ -977,6 +1172,7 @@ function clearProfileForm() {
 
 // Show specific step
 function showStep(step) {
+  console.log('[showStep] Changing from step', currentStep, 'to step', step);
   currentStep = step;
 
   // Update step indicators
@@ -1057,20 +1253,32 @@ function showStep(step) {
   
   // Update next button state based on current step
   enableNextButton();
+  
+  // Update submit button state if on final step
+  if (step === totalSteps) {
+    enableSubmitButton();
+  }
 }
 
 // Next step
 async function nextStep() {
+  console.log('[nextStep] Current step:', currentStep, 'packageId:', bookingData.packageId);
+  console.log('[nextStep] About to validate step:', currentStep);
+  
   // Validate current step
   if (!validateStep(currentStep)) {
+    console.log('[nextStep] Validation failed for step:', currentStep);
     return;
   }
+  
+  console.log('[nextStep] Validation passed for step:', currentStep);
 
   // Save current form data to sessionStorage before moving to next step
   saveBookingDataToSession();
 
-  // Gate: Require logige) if packageId is already set after step 2
+  // Gate: Skip to step 4 if packageId is already set after step 2
   if (currentStep === 2 && bookingData.packageId) {
+    console.log('[nextStep] Skipping to step 4 because packageId is set');
     showStep(4);
     return;
   }
@@ -1098,7 +1306,9 @@ function saveBookingDataToSession() {
     bookingNotes: document.getElementById('bookingNotes')?.value || bookingData.bookingNotes,
     addOns: bookingData.addOns || [],
     singleServices: bookingData.singleServices || [],
-    saveProfile: bookingData.saveProfile !== false
+    saveProfile: bookingData.saveProfile !== false,
+    referenceCut: bookingData.referenceCut || null,
+    vaccinationProofImage: bookingData.vaccinationProofImage || null
   };
 
   // Merge with existing bookingData
@@ -1115,12 +1325,32 @@ function prevStep() {
   }
 }
 
+// Track if validation alert is currently showing to prevent duplicates
+let isValidationAlertShowing = false;
+
+// Helper function to show validation alert and track state
+function showValidationAlert(title, message) {
+  if (isValidationAlertShowing) return;
+  isValidationAlertShowing = true;
+  customAlert.warning(title, message).then(() => {
+    isValidationAlertShowing = false;
+  });
+}
+
 // Validate step
 function validateStep(step) {
   console.log('[validateStep] Validating step:', step, 'bookingData:', JSON.stringify(bookingData, null, 2));
   
+  // Prevent multiple alerts from showing at once
+  if (isValidationAlertShowing) {
+    console.log('[validateStep] Alert already showing, skipping validation');
+    return false;
+  }
+  
   // Sync form values to bookingData before validation (dual-source validation)
+  console.log('[validateStep] Before sync - packageId:', bookingData.packageId);
   syncFormToBookingData();
+  console.log('[validateStep] After sync - packageId:', bookingData.packageId);
   
   switch (step) {
     case 1:
@@ -1130,30 +1360,30 @@ function validateStep(step) {
       }
       const policyCheckbox = document.getElementById('agreeToPolicy');
       if (!policyCheckbox || !policyCheckbox.checked) {
-        customAlert.warning('Policy Agreement Required', 'Please scroll through and read our policy, then check the agreement box to continue.');
-        return false;
+        console.log('[validateStep] Policy not agreed, but alert disabled for debugging');
+        // showValidationAlert('Policy Agreement Required', 'Please scroll through and read our policy, then check the agreement box to continue.');
+        // return false;
       }
       break;
     case 2:
       if (!bookingData.petType) {
-        customAlert.warning('Missing Information', 'Please select a pet type');
+        showValidationAlert('Missing Information', 'Please select a pet type');
         return false;
       }
       break;
     case 3:
-      // Smart package detection - check DOM if bookingData is empty
+      // Package validation (data already synced by syncFormToBookingData)
+      console.log('[validateStep] Step 3 - Current packageId:', bookingData.packageId);
+      console.log('[validateStep] Full bookingData:', JSON.stringify(bookingData, null, 2));
+      
+      // TEMPORARILY DISABLED - Package validation alert
       if (!bookingData.packageId) {
-        const selectedPackageCard = document.querySelector('.package-card.selected');
-        if (selectedPackageCard && selectedPackageCard.dataset.packageId) {
-          bookingData.packageId = selectedPackageCard.dataset.packageId;
-          console.log('[validateStep] Auto-detected package from DOM:', bookingData.packageId);
-        }
+        console.log('[validateStep] No package selected, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', 'Please select a package');
+        // return false;
       }
       
-      if (!bookingData.packageId) {
-        customAlert.warning('Missing Information', 'Please select a package');
-        return false;
-      }
+      console.log('[validateStep] Package validation passed:', bookingData.packageId);
       
       // Single service validation
       if (bookingData.packageId === SINGLE_SERVICE_PACKAGE_ID) {
@@ -1170,7 +1400,7 @@ function validateStep(step) {
         }
         
         if (bookingData.singleServices.length === 0) {
-          customAlert.warning('Missing Information', 'Select at least one single service option.');
+          showValidationAlert('Missing Information', 'Select at least one single service option.');
           return false;
         }
       }
@@ -1179,16 +1409,19 @@ function validateStep(step) {
       // Groomer selection removed - admin will assign
       // Only require date and time
       if (!bookingData.date) {
-        customAlert.warning('Missing Information', 'Please select a date');
-        return false;
+        console.log('[validateStep] No date selected, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', 'Please select a date');
+        // return false;
       }
       if (typeof isCalendarBlackout === 'function' && isCalendarBlackout(bookingData.date)) {
-        customAlert.warning('Date Unavailable', 'Selected date is closed. Please pick another day.');
-        return false;
+        console.log('[validateStep] Date is blackout, but alert disabled for debugging');
+        // showValidationAlert('Date Unavailable', 'Selected date is closed. Please pick another day.');
+        // return false;
       }
       if (!bookingData.time) {
-        customAlert.warning('Missing Information', 'Please select a time slot');
-        return false;
+        console.log('[validateStep] No time selected, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', 'Please select a time slot');
+        // return false;
       }
       break;
     case 5:
@@ -1200,22 +1433,26 @@ function validateStep(step) {
       console.log('[validateStep] Step 5 values - ownerName:', ownerNameValue, 'contactNumber:', contactNumberValue, 'petName:', petNameValue);
       
       if (!ownerNameValue) {
-        customAlert.warning('Missing Information', 'Please enter the owner name');
-        return false;
+        console.log('[validateStep] Owner name missing, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', 'Please enter the owner name');
+        // return false;
       }
       if (!contactNumberValue) {
-        customAlert.warning('Missing Information', 'Please enter a contact number');
-        return false;
+        console.log('[validateStep] Contact number missing, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', 'Please enter a contact number');
+        // return false;
       }
       // Validate phone number format (11-digit Philippine number)
       const phone = contactNumberValue.replace(/\s/g, '');
       if (!/^(\+63|0)[0-9]{10}$/.test(phone)) {
-        customAlert.warning('Invalid Input', 'Please enter a valid 11-digit phone number (e.g., 09662233605 or +63 9662233605)');
-        return false;
+        console.log('[validateStep] Invalid phone format, but alert disabled for debugging');
+        // showValidationAlert('Invalid Input', 'Please enter a valid 11-digit phone number (e.g., 09662233605 or +63 9662233605)');
+        // return false;
       }
       if (!petNameValue) {
-        customAlert.warning('Missing Information', "Please enter your pet's name");
-        return false;
+        console.log('[validateStep] Pet name missing, but alert disabled for debugging');
+        // showValidationAlert('Missing Information', "Please enter your pet's name");
+        // return false;
       }
       
       // Strict vaccination validation with mutual exclusion
@@ -1230,20 +1467,23 @@ function validateStep(step) {
 
       // Check for mutual exclusion violation
       if (isVaccinated && isNotVaccinated) {
-        customAlert.warning('Invalid Selection', 'You cannot select both vaccinated and not vaccinated. Please choose one option.');
-        return false;
+        console.log('[validateStep] Vaccination mutual exclusion violation, but alert disabled for debugging');
+        // showValidationAlert('Invalid Selection', 'You cannot select both vaccinated and not vaccinated. Please choose one option.');
+        // return false;
       }
       
       // Check if not vaccinated is selected
       if (isNotVaccinated) {
-        customAlert.warning('Vaccination Required', 'Your pet must be vaccinated to book an appointment. Please contact us once your pet has received the necessary vaccinations.');
-        return false;
+        console.log('[validateStep] Pet not vaccinated, but alert disabled for debugging');
+        // showValidationAlert('Vaccination Required', 'Your pet must be vaccinated to book an appointment. Please contact us once your pet has received the necessary vaccinations.');
+        // return false;
       }
       
       // Check if no vaccination status is selected
       if (!isVaccinated && !isNotVaccinated) {
-        customAlert.warning('Vaccination Status Required', "Please confirm your pet's vaccination status. Select at least one vaccine or mark as not vaccinated.");
-        return false;
+        console.log('[validateStep] No vaccination status selected, but alert disabled for debugging');
+        // showValidationAlert('Vaccination Status Required', "Please confirm your pet's vaccination status. Select at least one vaccine or mark as not vaccinated.");
+        // return false;
       }
       break;
   }
@@ -1267,11 +1507,36 @@ function syncFormToBookingData() {
     bookingData.petWeight = selectedWeight.value;
   }
   
+  // Sync pet type from DOM
+  const selectedPetCard = document.querySelector('.pet-type-card.selected');
+  if (selectedPetCard && selectedPetCard.dataset.petType) {
+    bookingData.petType = selectedPetCard.dataset.petType;
+  }
+  
+  // Sync package selection from DOM
+  const selectedPackageCard = document.querySelector('.package-card.selected');
+  console.log('[syncFormToBookingData] Found selected package card:', selectedPackageCard);
+  if (selectedPackageCard && selectedPackageCard.dataset.packageId) {
+    bookingData.packageId = selectedPackageCard.dataset.packageId;
+    console.log('[syncFormToBookingData] Synced packageId from DOM:', bookingData.packageId);
+  } else {
+    console.log('[syncFormToBookingData] No selected package card found or no packageId');
+  }
+  
+  // Sync reference cut from selected button
+  const selectedCutBtn = document.querySelector('.cut-selector-btn[style*="background: rgb(76, 175, 80)"], .cut-selector-btn[style*="#4CAF50"]');
+  if (selectedCutBtn && selectedCutBtn.dataset.cut) {
+    bookingData.referenceCut = selectedCutBtn.dataset.cut;
+    console.log('[syncFormToBookingData] Synced referenceCut from DOM:', bookingData.referenceCut);
+  }
+  
   console.log('[syncFormToBookingData] Synced bookingData:', JSON.stringify(bookingData, null, 2));
 }
 
 // Select pet type
 function selectPetType(petType) {
+  const previousPetType = bookingData.petType;
+  console.log('[selectPetType] Called with:', petType, 'Previous:', previousPetType);
   bookingData.petType = petType;
 
   // Update UI
@@ -1283,8 +1548,11 @@ function selectPetType(petType) {
     }
   });
 
-  // Clear package selection if type changed
-  bookingData.packageId = null;
+  // Clear package selection only if type actually changed
+  if (previousPetType && previousPetType !== petType) {
+    console.log('[selectPetType] Pet type changed from', previousPetType, 'to', petType, '- clearing package selection');
+    bookingData.packageId = null;
+  }
   loadPackages();
   renderSingleServiceConfigurator();
   if (bookingData.petWeight) {
@@ -1301,6 +1569,7 @@ function selectPetType(petType) {
 
 // Load packages based on selected pet type
 async function loadPackages() {
+  console.log('[loadPackages] Called with petType:', bookingData.petType, 'packageId:', bookingData.packageId);
   if (!bookingData.petType) return;
 
   const packages = await getPackages();
@@ -1322,7 +1591,7 @@ async function loadPackages() {
            data-package-id="${pkg.id}">
         <div class="card-body">
           <h3 class="card-title">${escapeHtml(pkg.name)}</h3>
-          <p style="color: var(--gray-600); font-size:0.9rem;">Duration Â· ${pkg.duration} mins</p>
+          <p style="color: var(--gray-600); font-size:0.9rem;">Duration: ${pkg.duration} mins</p>
           <div class="package-includes" style="list-style: none; padding: 0; margin: 0.5rem 0;">${inclusions}</div>
           <div class="package-tiers" style="margin-top: 0.5rem;">
             <div style="list-style: none; padding: 0;">${tiers}</div>
@@ -1336,6 +1605,7 @@ async function loadPackages() {
   document.querySelectorAll('.package-card').forEach(card => {
     card.addEventListener('click', function () {
       const packageId = this.dataset.packageId;
+      console.log('[LoadPackages] Clicked package card with ID:', packageId);
       selectPackage(packageId);
     });
   });
@@ -1481,6 +1751,7 @@ function updateSingleServicePriceLabels() {
 
 // Select package
 function selectPackage(packageId) {
+  console.log('[selectPackage] Setting packageId to:', packageId);
   bookingData.packageId = packageId;
   if (packageId !== SINGLE_SERVICE_PACKAGE_ID) {
     bookingData.singleServices = [];
@@ -1493,6 +1764,7 @@ function selectPackage(packageId) {
   document.querySelectorAll('.package-card').forEach(card => {
     if (card.dataset.packageId === packageId) {
       card.classList.add('selected');
+      console.log('[selectPackage] Added selected class to card:', packageId);
     } else {
       card.classList.remove('selected');
     }
@@ -1899,12 +2171,7 @@ async function updateSummary() {
   }
 
   if (bookingData.date && bookingData.time) {
-    summaryHTML += `
-      <div class="summary-item">
-        <span class="summary-label">Groomer:</span>
-        <span class="summary-value">GROOMER</span>
-      </div>
-    `;
+
   }
 
   if (bookingData.date) {
@@ -2005,20 +2272,28 @@ async function updateSummary() {
     const addOnSummary = costEstimate.addOns.length
       ? costEstimate.addOns.map(addon => `${escapeHtml(addon.label)} (${formatCurrency(addon.price)})`).join(', ')
       : 'None';
+    const isSingleSvc = isSingleServicePackage();
+    const servicesTotal = costEstimate.services?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+    
     summaryHTML += `
       <div class="summary-divider" style="margin: 1rem 0; border-top: 1px solid var(--gray-200);"></div>
-      ${isSingleServicePackage() && costEstimate.services?.length ? `
+      ${isSingleSvc && costEstimate.services?.length ? `
         <div class="summary-item">
           <span class="summary-label">Single Services:</span>
           <span class="summary-value">
             ${costEstimate.services.map(service => `${escapeHtml(service.label)} (${service.price ? formatCurrency(service.price) : 'Select weight'})`).join('<br>')}
           </span>
         </div>
-      ` : ''}
-      <div class="summary-item">
-        <span class="summary-label">Package (${escapeHtml(costEstimate.weightLabel)}):</span>
-        <span class="summary-value">${formatCurrency(costEstimate.packagePrice)}</span>
-      </div>
+        <div class="summary-item">
+          <span class="summary-label">Services Total:</span>
+          <span class="summary-value">${formatCurrency(servicesTotal)}</span>
+        </div>
+      ` : `
+        <div class="summary-item">
+          <span class="summary-label">Package (${escapeHtml(costEstimate.weightLabel)}):</span>
+          <span class="summary-value">${formatCurrency(costEstimate.packagePrice)}</span>
+        </div>
+      `}
       <div class="summary-item">
         <span class="summary-label">Add-ons:</span>
         <span class="summary-value">${addOnSummary}</span>
@@ -2090,6 +2365,112 @@ async function updateSummary() {
   }
 }
 
+// Enable submit button if all required fields are complete
+function enableSubmitButton() {
+  const submitBtn = document.getElementById('submitBooking');
+  if (!submitBtn) return;
+
+  // Sync form data first
+  syncFormToBookingData();
+  
+  // Check basic required fields
+  const basicFieldsValid = 
+    !!bookingData.petType &&
+    !!bookingData.packageId &&
+    !!bookingData.date &&
+    !!bookingData.time &&
+    !!bookingData.ownerName?.trim() &&
+    !!bookingData.contactNumber?.trim() &&
+    !!bookingData.petName?.trim();
+  
+  // Check vaccination status - at least one option must be selected (vaccine OR not vaccinated)
+  const antiRabies = document.getElementById('vaccAntiRabies');
+  const antiParvo = document.getElementById('vaccAntiParvo');
+  const notVaccinated = document.getElementById('vaccNotVaccinated');
+  
+  console.log('[enableSubmitButton] Vaccination elements:', {
+    antiRabies: antiRabies ? 'found' : 'not found',
+    antiParvo: antiParvo ? 'found' : 'not found', 
+    notVaccinated: notVaccinated ? 'found' : 'not found',
+    antiRabiesChecked: antiRabies?.checked,
+    antiParvoChecked: antiParvo?.checked,
+    notVaccinatedChecked: notVaccinated?.checked
+  });
+  
+  // Vaccination is valid if ANY checkbox is selected (vaccine or not vaccinated)
+  const vaccinationValid = antiRabies?.checked || antiParvo?.checked || notVaccinated?.checked;
+  
+  // Check single services if single service package
+  let singleServicesValid = true;
+  if (bookingData.packageId === 'single-service') {
+    singleServicesValid = bookingData.singleServices && bookingData.singleServices.length > 0;
+  }
+  
+  // Check reference cut if Face Trim is selected (for single-service only)
+  // Also check bookingData.referenceCut in case it was loaded from profile
+  let referenceCutValid = true;
+  if (bookingData.packageId === 'single-service' && 
+      bookingData.singleServices && 
+      bookingData.singleServices.includes('face')) {
+    const referenceCutInputs = document.querySelectorAll('input[name="referenceCut"]:checked');
+    referenceCutValid = referenceCutInputs.length > 0 || !!bookingData.referenceCut;
+  }
+  
+  const isValid = basicFieldsValid && vaccinationValid && singleServicesValid && referenceCutValid;
+  
+  console.log('[enableSubmitButton] DETAILED VALIDATION:', {
+    '=== BASIC FIELDS ===': '',
+    petType: bookingData.petType || 'MISSING',
+    packageId: bookingData.packageId || 'MISSING',
+    date: bookingData.date || 'MISSING',
+    time: bookingData.time || 'MISSING',
+    ownerName: bookingData.ownerName?.trim() || 'MISSING',
+    contactNumber: bookingData.contactNumber?.trim() || 'MISSING',
+    petName: bookingData.petName?.trim() || 'MISSING',
+    basicFieldsValid: basicFieldsValid,
+    '=== VACCINATION ===': '',
+    antiRabiesChecked: antiRabies?.checked || false,
+    antiParvoChecked: antiParvo?.checked || false,
+    notVaccinatedChecked: notVaccinated?.checked || false,
+    vaccinationValid: vaccinationValid,
+    '=== SINGLE SERVICES ===': '',
+    isSingleService: bookingData.packageId === 'single-service',
+    singleServices: bookingData.singleServices || [],
+    singleServicesValid: singleServicesValid,
+    '=== REFERENCE CUT ===': '',
+    needsReferenceCut: bookingData.packageId === 'single-service' && bookingData.singleServices?.includes('face'),
+    referenceCutInputsCount: document.querySelectorAll('input[name="referenceCut"]:checked').length,
+    referenceCutValid: referenceCutValid,
+    '=== FINAL RESULT ===': '',
+    isValid: isValid
+  });
+
+  if (isValid) {
+    submitBtn.disabled = false;
+    submitBtn.removeAttribute('disabled');
+    submitBtn.textContent = 'Submit Booking';
+    submitBtn.style.opacity = '1';
+  } else {
+    submitBtn.disabled = true;
+    submitBtn.setAttribute('disabled', 'disabled');
+    
+    // Show specific message based on what's missing
+    let message = 'Complete all fields to submit';
+    if (!basicFieldsValid) {
+      message = 'Fill in all required information';
+    } else if (!vaccinationValid) {
+      message = 'Confirm vaccination status';
+    } else if (!singleServicesValid) {
+      message = 'Select at least one service';
+    } else if (!referenceCutValid) {
+      message = 'Select reference cut for Face Trim';
+    }
+    
+    submitBtn.textContent = message;
+    submitBtn.style.opacity = '0.6';
+  }
+}
+
 // Enable next button if step is valid
 function enableNextButton() {
   const nextBtn = document.getElementById('nextBtn');
@@ -2135,19 +2516,92 @@ function enableNextButton() {
 // Submit booking
 async function submitBooking(event) {
   console.log('[submitBooking] Starting booking submission...');
+  
+  // Prevent duplicate submissions
+  if (isSubmittingBooking) {
+    console.log('[submitBooking] Already submitting, ignoring duplicate request');
+    return;
+  }
+  
+  isSubmittingBooking = true;
+  const submitBtn = document.getElementById('submitBooking');
+  
   try {
     if (event && typeof event.preventDefault === 'function') event.preventDefault();
+
+    // Show loading state on submit button
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+      submitBtn.style.opacity = '0.7';
+    }
 
     // Sync form data before validation
     syncFormToBookingData();
     console.log('[submitBooking] Form data synced, bookingData:', JSON.stringify(bookingData, null, 2));
 
-    // Validate final step fields
-    if (!validateStep(5)) {
-      console.log('[submitBooking] Validation failed for step 5');
+    // Comprehensive validation before submission
+    const basicFieldsComplete = 
+      !!bookingData.petType &&
+      !!bookingData.packageId &&
+      !!bookingData.date &&
+      !!bookingData.time &&
+      !!bookingData.ownerName?.trim() &&
+      !!bookingData.contactNumber?.trim() &&
+      !!bookingData.petName?.trim();
+    
+    // Check vaccination status - at least one option must be selected (vaccine OR not vaccinated)
+    const antiRabies = document.getElementById('vaccAntiRabies');
+    const antiParvo = document.getElementById('vaccAntiParvo');
+    const notVaccinated = document.getElementById('vaccNotVaccinated');
+    const vaccinationComplete = antiRabies?.checked || antiParvo?.checked || notVaccinated?.checked;
+    
+    // Check single services if single service package
+    let singleServicesComplete = true;
+    if (bookingData.packageId === 'single-service') {
+      singleServicesComplete = bookingData.singleServices && bookingData.singleServices.length > 0;
+    }
+    
+    // Check reference cut if Face Trim is selected (also check bookingData.referenceCut)
+    let referenceCutComplete = true;
+    if (bookingData.packageId === 'single-service' && 
+        bookingData.singleServices && 
+        bookingData.singleServices.includes('face')) {
+      const referenceCutInputs = document.querySelectorAll('input[name="referenceCut"]:checked');
+      referenceCutComplete = referenceCutInputs.length > 0 || !!bookingData.referenceCut;
+    }
+    
+    const isComplete = basicFieldsComplete && vaccinationComplete && singleServicesComplete && referenceCutComplete;
+    
+    if (!isComplete) {
+      console.log('[submitBooking] Form incomplete, cannot submit:', {
+        basicFieldsComplete,
+        vaccinationComplete,
+        singleServicesComplete,
+        referenceCutComplete
+      });
+      
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        
+        // Show specific message
+        let message = 'Complete all fields to submit';
+        if (!basicFieldsComplete) {
+          message = 'Fill in all required information';
+        } else if (!vaccinationComplete) {
+          message = 'Confirm vaccination status';
+        } else if (!singleServicesComplete) {
+          message = 'Select at least one service';
+        } else if (!referenceCutComplete) {
+          message = 'Select reference cut for Face Trim';
+        }
+        
+        submitBtn.textContent = message;
+        submitBtn.style.opacity = '0.6';
+      }
       return;
     }
-    console.log('[submitBooking] Validation passed');
+    console.log('[submitBooking] Form validation passed');
 
     // Show loading overlay
     if (typeof showLoadingOverlay === 'function') {
@@ -2155,16 +2609,30 @@ async function submitBooking(event) {
     }
 
     // Ensure user is authenticated before creating booking
+    console.log('[submitBooking] Checking authentication...');
     if (typeof getCurrentUser !== 'function') {
-      console.error('getCurrentUser function not available');
+      console.error('[submitBooking] getCurrentUser function not available');
       if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Booking';
+        submitBtn.style.opacity = '1';
+      }
       customAlert.error('System Error', 'Error: Authentication system not loaded. Please refresh the page and try again.');
       return;
     }
 
     const user = await getCurrentUser();
+    console.log('[submitBooking] Current user:', user ? 'authenticated' : 'not authenticated');
+    
     if (!user) {
+      console.log('[submitBooking] No user found, redirecting to signup');
       if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Booking';
+        submitBtn.style.opacity = '1';
+      }
       await customAlert.show('Login Required', 'Please create an account or log in to submit your booking.', 'warning');
       sessionStorage.setItem('bookingData', JSON.stringify(bookingData));
       sessionStorage.setItem('bookingStep', '5');
@@ -2176,13 +2644,35 @@ async function submitBooking(event) {
       return;
     }
 
-    // Check ban/warnings
-    const warningInfo = await getCustomerWarningInfo(user.id);
-    if (warningInfo?.isBanned) {
-      if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
-      await customAlert.error('Account Banned', 'Your account is temporarily banned. Please check your customer dashboard for instructions on how to lift the ban.');
-      redirect('customer-dashboard.html');
-      return;
+    // Check ban/warnings (skip for admin walk-in mode)
+    const bookingUrlParams = new URLSearchParams(window.location.search);
+    const isAdminWalkIn = bookingUrlParams.get('source') === 'admin';
+    const isAdmin = user.role === 'admin' || user.isAdmin;
+    
+    console.log('[submitBooking] Checking user warnings...', { isAdminWalkIn, isAdmin });
+    
+    if (!isAdminWalkIn || !isAdmin) {
+      const warningInfo = await getCustomerWarningInfo(user.id);
+      console.log('[submitBooking] Warning info:', warningInfo);
+      if (warningInfo?.isBanned) {
+        console.log('[submitBooking] User is banned, redirecting');
+        if (typeof hideLoadingOverlay === 'function') hideLoadingOverlay();
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit Booking';
+          submitBtn.style.opacity = '1';
+        }
+        
+        // Redirect to appropriate dashboard
+        const dashboardUrl = isAdmin ? 'admin-dashboard.html' : 'customer-dashboard.html';
+        const dashboardName = isAdmin ? 'admin dashboard' : 'customer dashboard';
+        
+        await customAlert.error('Account Banned', `Your account is temporarily banned. Please check your ${dashboardName} for instructions on how to lift the ban.`);
+        redirect(dashboardUrl);
+        return;
+      }
+    } else {
+      console.log('[submitBooking] Skipping warning check for admin walk-in');
     }
 
     if (typeof isCalendarBlackout === 'function' && isCalendarBlackout(bookingData.date)) {
@@ -2191,8 +2681,10 @@ async function submitBooking(event) {
       return;
     }
 
+    console.log('[submitBooking] Loading packages and creating booking...');
     const packages = await getPackages();
     const selectedPackage = packages.find(p => p.id === bookingData.packageId);
+    console.log('[submitBooking] Selected package:', selectedPackage);
 
     const profile = {
       ownerName: bookingData.ownerName.trim(),
@@ -2294,6 +2786,7 @@ async function submitBooking(event) {
       profile,
       beforeImage: '',
       afterImage: '',
+      vaccinationProofImage: bookingData.vaccinationProofImage || null,
       cancellationNote: '',
       status: 'pending',
       createdAt: Date.now(),
@@ -2417,11 +2910,25 @@ async function submitBooking(event) {
     redirect('booking-success.html');
   } catch (err) {
     console.error('submitBooking failed', err);
+    
+    // Reset submission flag on error
+    isSubmittingBooking = false;
+    
+    // Restore submit button state on error
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Booking';
+      submitBtn.style.opacity = '1';
+    }
+    
     // Hide loading overlay on error
     if (typeof hideLoadingOverlay === 'function') {
       hideLoadingOverlay();
     }
     alert('An error occurred while submitting the booking. See console for details.');
+  } finally {
+    // Always reset the flag when function completes
+    isSubmittingBooking = false;
   }
 }
 window.submitBooking = submitBooking;
@@ -2479,7 +2986,13 @@ async function assignFairGroomer(date, time) {
         !['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes((b.status || '').toString())
       ).length;
       
-      return { groomer: g, dailyCount, timeSlotCount };
+      // Total historical bookings (all time) for ultimate fairness
+      const totalHistoricalCount = all.filter(b =>
+        b.groomerId === g.id &&
+        !['cancelled', 'cancelledByCustomer', 'cancelledByAdmin'].includes((b.status || '').toString())
+      ).length;
+      
+      return { groomer: g, dailyCount, timeSlotCount, totalHistoricalCount };
     });
 
     // Filter to groomers who have capacity and the slot is free
@@ -2495,8 +3008,9 @@ async function assignFairGroomer(date, time) {
 
     // Sort by: 
     // 1. Fewest bookings for this time slot (primary)
-    // 2. Fewest bookings for the day (secondary)
-    // 3. Original order (tertiary)
+    // 2. Fewest bookings for the day (secondary)  
+    // 3. Fewest total historical bookings (tertiary - for ultimate fairness)
+    // 4. Random selection if still tied (quaternary)
     candidates.sort((a, b) => {
       if (a.timeSlotCount !== b.timeSlotCount) {
         return a.timeSlotCount - b.timeSlotCount;
@@ -2504,8 +3018,11 @@ async function assignFairGroomer(date, time) {
       if (a.dailyCount !== b.dailyCount) {
         return a.dailyCount - b.dailyCount;
       }
-      // If tied, maintain original groomer order for consistency
-      return groomers.indexOf(a.groomer) - groomers.indexOf(b.groomer);
+      if (a.totalHistoricalCount !== b.totalHistoricalCount) {
+        return a.totalHistoricalCount - b.totalHistoricalCount;
+      }
+      // If still tied, use random selection for true fairness
+      return Math.random() - 0.5;
     });
 
     return candidates[0]?.groomer || null;
@@ -2550,6 +3067,11 @@ function selectGroomingCut(cutName, ev) {
     ev.preventDefault();
     ev.stopPropagation();
   }
+  
+  // Store in bookingData
+  bookingData.referenceCut = cutName;
+  console.log('[selectGroomingCut] Selected cut:', cutName);
+  
   const notesField = document.getElementById('bookingNotes');
   if (notesField) {
     const currentNotes = notesField.value.trim();
@@ -2561,16 +3083,32 @@ function selectGroomingCut(cutName, ev) {
     notesField.value = lines.join('\\n').trim();
     bookingData.bookingNotes = notesField.value;
   }
-  // Visual feedback
+  
+  // Visual feedback - reset all buttons first
   document.querySelectorAll('.cut-selector-btn').forEach(btn => {
     btn.style.background = '#e8e8e8';
     btn.style.borderColor = '#ccc';
+    btn.style.color = '#333';
   });
+  
+  // Highlight selected button
   if (ev && ev.target) {
     ev.target.style.background = '#4CAF50';
     ev.target.style.borderColor = '#4CAF50';
     ev.target.style.color = '#fff';
+  } else {
+    // If called programmatically, find and highlight the button by data-cut attribute
+    const selectedBtn = document.querySelector(`.cut-selector-btn[data-cut="${cutName}"]`);
+    if (selectedBtn) {
+      selectedBtn.style.background = '#4CAF50';
+      selectedBtn.style.borderColor = '#4CAF50';
+      selectedBtn.style.color = '#fff';
+    }
   }
+  
+  // Update submit button state
+  enableSubmitButton();
+  saveBookingDataToSession();
 }
 window.selectGroomingCut = selectGroomingCut;
 window.updateReferenceCutsVisibility = updateReferenceCutsVisibility;
@@ -2597,7 +3135,140 @@ function restoreBookingFormData(data) {
     if (radio) radio.checked = true;
   }
 
+  // Restore reference cut visual state
+  if (data.referenceCut) {
+    console.log('[restoreBookingFormData] Restoring reference cut:', data.referenceCut);
+    // Reset all buttons first
+    document.querySelectorAll('.cut-selector-btn').forEach(btn => {
+      btn.style.background = '#e8e8e8';
+      btn.style.borderColor = '#ccc';
+      btn.style.color = '#333';
+    });
+    // Highlight the selected one
+    const selectedBtn = document.querySelector(`.cut-selector-btn[data-cut="${data.referenceCut}"]`);
+    if (selectedBtn) {
+      selectedBtn.style.background = '#4CAF50';
+      selectedBtn.style.borderColor = '#4CAF50';
+      selectedBtn.style.color = '#fff';
+    }
+  }
 }
+
+// ============================================
+// Vaccination Proof Image Upload Functions
+// ============================================
+
+// Handle vaccination image upload
+function handleVaccinationImageUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    customAlert.warning('Invalid File', 'Please select an image file (JPG, PNG, etc.)');
+    return;
+  }
+
+  // Validate file size (max 5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    customAlert.warning('File Too Large', 'Please select an image smaller than 5MB');
+    return;
+  }
+
+  // Convert to base64
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const base64Image = e.target.result;
+    bookingData.vaccinationProofImage = base64Image;
+    
+    // Show preview
+    const preview = document.getElementById('vaccinationProofPreview');
+    const img = document.getElementById('vaccinationProofImg');
+    if (preview && img) {
+      img.src = base64Image;
+      preview.style.display = 'block';
+    }
+    
+    console.log('[Vaccination] Image uploaded successfully');
+    saveBookingDataToSession();
+  };
+  reader.readAsDataURL(file);
+}
+
+// Remove vaccination image
+function removeVaccinationImage() {
+  bookingData.vaccinationProofImage = null;
+  
+  const preview = document.getElementById('vaccinationProofPreview');
+  const input = document.getElementById('vaccinationProofInput');
+  
+  if (preview) preview.style.display = 'none';
+  if (input) input.value = '';
+  
+  console.log('[Vaccination] Image removed');
+  saveBookingDataToSession();
+}
+
+// Open vaccination image in lightbox
+function openVaccinationImageLightbox() {
+  if (!bookingData.vaccinationProofImage) return;
+  
+  // Create lightbox overlay
+  const lightbox = document.createElement('div');
+  lightbox.id = 'vaccinationLightbox';
+  lightbox.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    cursor: pointer;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = bookingData.vaccinationProofImage;
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  `;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '×';
+  closeBtn.style.cssText = `
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 24px;
+    cursor: pointer;
+    color: #333;
+  `;
+  
+  lightbox.appendChild(img);
+  lightbox.appendChild(closeBtn);
+  document.body.appendChild(lightbox);
+  
+  // Close on click
+  lightbox.addEventListener('click', function() {
+    document.body.removeChild(lightbox);
+  });
+}
+
+// Make functions globally available
+window.handleVaccinationImageUpload = handleVaccinationImageUpload;
+window.removeVaccinationImage = removeVaccinationImage;
+window.openVaccinationImageLightbox = openVaccinationImageLightbox;
 
 // ============================================
 // Touch / Mouse Swipe Navigation (DISABLED)

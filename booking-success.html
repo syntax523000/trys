@@ -283,20 +283,28 @@
         `;
 
         if (cost) {
+          const isSingleService = booking.packageId === 'single-service';
+          const servicesTotal = cost.services?.reduce((sum, s) => sum + (s.price || 0), 0) || 0;
+          
           container.innerHTML += `
             <div class="summary-divider" style="margin: 1.25rem 0; border-top: 1px solid var(--gray-200);"></div>
-            ${cost.services && cost.services.length ? `
+            ${isSingleService && cost.services && cost.services.length ? `
               <div class="summary-item">
                 <span class="summary-label">Single Services:</span>
                 <span class="summary-value">
                   ${cost.services.map(service => `${escapeHtml(service.label)} (${service.price ? formatCurrency(service.price) : 'Select weight for pricing'})`).join('<br>')}
                 </span>
               </div>
-            ` : ''}
-            <div class="summary-item">
-              <span class="summary-label">Package (${escapeHtml(cost.weightLabel)}):</span>
-              <span class="summary-value">${formatCurrency(cost.packagePrice)}</span>
-            </div>
+              <div class="summary-item">
+                <span class="summary-label">Services Total:</span>
+                <span class="summary-value">${formatCurrency(servicesTotal)}</span>
+              </div>
+            ` : `
+              <div class="summary-item">
+                <span class="summary-label">Package (${escapeHtml(cost.weightLabel)}):</span>
+                <span class="summary-value">${formatCurrency(cost.packagePrice)}</span>
+              </div>
+            `}
             <div class="summary-item">
               <span class="summary-label">Add-ons:</span>
               <span class="summary-value">${cost.addOns.length ? cost.addOns.map(addon => `${escapeHtml(addon.label)} (${formatCurrency(addon.price)})`).join(', ') : 'None'}</span>

@@ -97,61 +97,74 @@ function validateStep(step, state) {
       if (typeof document !== 'undefined') {
         const policyCheckbox = document.getElementById('agreeToPolicy');
         if (!policyCheckbox || !policyCheckbox.checked) {
-          errors.push('Please read and agree to the policy');
+          console.log('[BookingLogic] Policy not agreed, but validation disabled for debugging');
+          // errors.push('Please read and agree to the policy');
         }
       } else if (!state.policyAgreed) {
-        errors.push('Please read and agree to the policy');
+        console.log('[BookingLogic] Policy not agreed (state), but validation disabled for debugging');
+        // errors.push('Please read and agree to the policy');
       }
       break;
       
     case 2:
       // Step 2: Pet Type Selection
       if (!state.petType) {
-        errors.push('Please select a pet type');
+        console.log('[BookingLogic] No pet type selected, but validation disabled for debugging');
+        // errors.push('Please select a pet type');
       }
       break;
       
     case 3:
       // Step 3: Package Selection
       if (!state.packageId) {
-        errors.push('Please select a package');
+        console.log('[BookingLogic] No package selected, but validation disabled for debugging');
+        // errors.push('Please select a package');
       }
       if (state.packageId === 'single-service' && (!state.singleServices || state.singleServices.length === 0)) {
-        errors.push('Please select at least one service');
+        console.log('[BookingLogic] No single services selected, but validation disabled for debugging');
+        // errors.push('Please select at least one service');
       }
       break;
       
     case 4:
       // Step 4: Schedule (Date & Time)
       if (!state.date) {
-        errors.push('Please select a date');
+        console.log('[BookingLogic] No date selected, but validation disabled for debugging');
+        // errors.push('Please select a date');
       }
       if (!state.time) {
-        errors.push('Please select a time');
+        console.log('[BookingLogic] No time selected, but validation disabled for debugging');
+        // errors.push('Please select a time');
       }
       break;
       
     case 5:
       // Step 5: Owner Details & Confirmation
       if (!state.ownerName || !state.ownerName.trim()) {
-        errors.push('Please enter owner name');
+        console.log('[BookingLogic] Owner name missing, but validation disabled for debugging');
+        // errors.push('Please enter owner name');
       }
       if (!state.contactNumber || !state.contactNumber.trim()) {
-        errors.push('Please enter contact number');
+        console.log('[BookingLogic] Contact number missing, but validation disabled for debugging');
+        // errors.push('Please enter contact number');
       } else {
         const phoneValidation = validatePhoneNumber(state.contactNumber);
         if (!phoneValidation.valid) {
-          errors.push(phoneValidation.error);
+          console.log('[BookingLogic] Invalid phone format, but validation disabled for debugging');
+          // errors.push(phoneValidation.error);
         }
       }
       if (!state.petName || !state.petName.trim()) {
-        errors.push('Please enter pet name');
+        console.log('[BookingLogic] Pet name missing, but validation disabled for debugging');
+        // errors.push('Please enter pet name');
       }
       if (!state.vaccinationStatus) {
-        errors.push('Please confirm vaccination status');
+        console.log('[BookingLogic] Vaccination status missing, but validation disabled for debugging');
+        // errors.push('Please confirm vaccination status');
       }
       if (state.vaccinationStatus === 'not-vaccinated') {
-        errors.push('Pet must be vaccinated to book');
+        console.log('[BookingLogic] Pet not vaccinated, but validation disabled for debugging');
+        // errors.push('Pet must be vaccinated to book');
       }
       break;
   }

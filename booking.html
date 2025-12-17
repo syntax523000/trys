@@ -360,6 +360,31 @@
                             <span>✗ Not Vaccinated</span>
                           </label>
                         </div>
+                        
+                        <!-- Vaccination Proof Image Upload -->
+                        <div id="vaccinationProofSection" style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc;">
+                          <label class="form-label" style="margin-bottom: 0.5rem; display: block;">📷 Upload Vaccination Proof (Optional)</label>
+                          <p style="color: var(--gray-600); font-size: 0.8rem; margin-bottom: 0.75rem;">Upload a photo of your pet's vaccination card or certificate</p>
+                          
+                          <input type="file" id="vaccinationProofInput" accept="image/*" style="display: none;" onchange="handleVaccinationImageUpload(this)">
+                          
+                          <button type="button" onclick="document.getElementById('vaccinationProofInput').click()" 
+                            style="padding: 0.6rem 1rem; background: #fff; border: 1px solid #333; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                            <span>📤</span> Choose Image
+                          </button>
+                          
+                          <!-- Image Preview -->
+                          <div id="vaccinationProofPreview" style="margin-top: 1rem; display: none;">
+                            <p style="font-size: 0.8rem; color: #666; margin-bottom: 0.5rem;">Preview:</p>
+                            <div style="position: relative; display: inline-block;">
+                              <img id="vaccinationProofImg" src="" alt="Vaccination Proof" 
+                                style="max-width: 200px; max-height: 150px; border-radius: 8px; border: 2px solid #4CAF50; cursor: pointer;"
+                                onclick="openVaccinationImageLightbox()">
+                              <button type="button" onclick="removeVaccinationImage()" 
+                                style="position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; background: #e74c3c; color: white; border: none; border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 1;">×</button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -596,18 +621,35 @@
         });
       }
       
-      // Loading overlay functions
-      window.showLoadingOverlay = function() {
-        const overlay = document.getElementById('loadingOverlay');
-        if (overlay) {
-          overlay.classList.add('active');
+      // Loading overlay functions - use custom alert system for dynamic messages
+      window.showLoadingOverlay = function(message) {
+        // Use custom alert loading if available
+        if (window.customAlert && typeof window.customAlert.showLoading === 'function') {
+          window.customAlert.showLoading(message || 'Loading...');
+        } else {
+          // Fallback to HTML overlay
+          const overlay = document.getElementById('loadingOverlay');
+          if (overlay) {
+            // Update message if provided
+            const textEl = overlay.querySelector('.loading-text');
+            if (textEl && message) {
+              textEl.textContent = message;
+            }
+            overlay.classList.add('active');
+          }
         }
       };
       
       window.hideLoadingOverlay = function() {
-        const overlay = document.getElementById('loadingOverlay');
-        if (overlay) {
-          overlay.classList.remove('active');
+        // Use custom alert loading if available
+        if (window.customAlert && typeof window.customAlert.hideLoading === 'function') {
+          window.customAlert.hideLoading();
+        } else {
+          // Fallback to HTML overlay
+          const overlay = document.getElementById('loadingOverlay');
+          if (overlay) {
+            overlay.classList.remove('active');
+          }
         }
       };
       
@@ -642,10 +684,10 @@
       if (submitBtn) {
         const originalClick = submitBtn.onclick;
         submitBtn.addEventListener('click', function(e) {
-          // Show loading overlay when submitting
-          showLoadingOverlay();
+          // Show loading overlay when submitting with proper message
+          showLoadingOverlay('Submitting your booking...');
           
-          // Hide after 3 seconds if not redirected (fallback)
+          // Hide after 10 seconds if not redirected (fallback)
           setTimeout(function() {
             hideLoadingOverlay();
           }, 10000);

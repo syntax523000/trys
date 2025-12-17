@@ -114,7 +114,7 @@
                   <div class="price-item">₱800<span>15.1–30kg</span></div>
                   <div class="price-item">₱920<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow('full-basic')" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
@@ -137,7 +137,7 @@
                   <div class="price-item">₱930<span>15.1–30kg</span></div>
                   <div class="price-item">₱1,050<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow('full-styled')" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
@@ -160,7 +160,7 @@
                   <div class="price-item">₱600<span>15.1–30kg</span></div>
                   <div class="price-item">₱700<span>30kg & above</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow('bubble-bath')" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
@@ -181,7 +181,7 @@
                   <div class="price-item">₱70–₱90<span>Ear Clean</span></div>
                   <div class="price-item">₱120–₱170<span>Facial Cut & Clean</span></div>
                 </div>
-                <a href="#" onclick="handleBookNow()" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
+                <a href="#" onclick="handleBookNow('single-service')" class="btn btn-primary btn-sm" style="background: #000; color: #fff; border: 2px solid #000; margin-top: 1rem;">Book Now</a>
               </div>
             </div>
           </div>
@@ -233,16 +233,13 @@
           <p style="margin: 1rem 0 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Phone:</strong> 0951 986 5882</p>
           <p style="margin: 0.5rem 0; color: #333; font-size: 0.95rem;"><strong style="color: #000;">Email:</strong> yenspetshop@gmail.com</p>
           
-          <!-- Social Icons - Facebook, Instagram, TikTok -->
+          <!-- Social Icons - Facebook, Instagram -->
           <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
-            <a href="#" target="_blank" title="Facebook" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
+            <a href="https://share.google/8W33SmRZu5TUkayoZ" target="_blank" title="Facebook" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
               <i class="fab fa-facebook-f"></i>
             </a>
-            <a href="#" target="_blank" title="Instagram" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
+            <a href="https://share.google/8W33SmRZu5TUkayoZINSTAGRAM" target="_blank" title="Instagram" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
               <i class="fab fa-instagram"></i>
-            </a>
-            <a href="#" target="_blank" title="TikTok" class="social-icon" style="width: 42px; height: 42px; background: #000; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.3s ease; font-size: 1.2rem;" onmouseover="this.style.background='#333'; this.style.transform='scale(1.1)'" onmouseout="this.style.background='#000'; this.style.transform='scale(1)'">
-              <i class="fab fa-tiktok"></i>
             </a>
           </div>
         </div>
@@ -285,10 +282,14 @@
   <script src="js/custom-alert.js"></script>
   <script type="module" src="js/auth.js"></script>
   <script>
-    function handleBookNow() {
+    function handleBookNow(packageId = null) {
       event.preventDefault();
       // Go directly to booking - allow browse, auth gate at checkout
-      window.location.href = 'booking.html';
+      if (packageId) {
+        window.location.href = `booking.html?package=${packageId}`;
+      } else {
+        window.location.href = 'booking.html';
+      }
     }
 
     document.addEventListener('DOMContentLoaded', async function () {

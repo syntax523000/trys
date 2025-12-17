@@ -123,9 +123,9 @@ a:hover {
 header {
   background: #fff;
   border-bottom: 2px solid #000;
-  position: relative;
-  top: auto;
-  z-index: 100;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
   padding: 1rem 0;
 }
 

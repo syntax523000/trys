@@ -41,24 +41,30 @@ const SINGLE_SERVICE_PRICING = {
     id: 'nail',
     label: 'Nail Trim',
     tiers: {
-      small: { label: 'Nail Trim 5kg & below', price: 50 },
-      large: { label: 'Nail Trim 30kg & above', price: 80 }
+      small: { label: 'Nail Trim ≤ 5kg', price: 50 },
+      medium: { label: 'Nail Trim 5.1-15kg', price: 60 },
+      large: { label: 'Nail Trim 15.1-30kg', price: 70 },
+      xlarge: { label: 'Nail Trim ≥ 30.1kg', price: 80 }
     }
   },
   ear: {
     id: 'ear',
     label: 'Ear Clean',
     tiers: {
-      small: { label: 'Ear Clean 5kg & below', price: 70 },
-      large: { label: 'Ear Clean 30kg & above', price: 90 }
+      small: { label: 'Ear Clean ≤ 5kg', price: 70 },
+      medium: { label: 'Ear Clean 5.1-15kg', price: 80 },
+      large: { label: 'Ear Clean 15.1-30kg', price: 85 },
+      xlarge: { label: 'Ear Clean ≥ 30.1kg', price: 90 }
     }
   },
   face: {
     id: 'face',
     label: 'Face Trim',
     tiers: {
-      small: { label: 'Face Trim 5kg & below', price: 120 },
-      large: { label: 'Face Trim 30kg & above', price: 170 }
+      small: { label: 'Face Trim ≤ 5kg', price: 120 },
+      medium: { label: 'Face Trim 5.1-15kg', price: 140 },
+      large: { label: 'Face Trim 15.1-30kg', price: 155 },
+      xlarge: { label: 'Face Trim ≥ 30.1kg', price: 170 }
     }
   }
 };
@@ -889,19 +895,38 @@ function normalizeWeightLabel(value = '') {
 function getWeightCategory(weightLabel = '') {
   if (!weightLabel) return 'small';
   const normalized = normalizeWeightLabel(weightLabel);
-  // Check for "5kg & below" or similar small weight indicators
+  
+  console.log('[getWeightCategory] Input:', weightLabel, 'Normalized:', normalized);
+  
+  // Check for specific weight ranges
   if (normalized.includes('5kg') && (normalized.includes('below') || normalized.includes('&'))) {
     return 'small';
   }
-  // Check for "30kg & above" or similar large weight indicators
-  if (normalized.includes('30kg') && (normalized.includes('above') || normalized.includes('&'))) {
+  if (normalized.includes('5.1') && normalized.includes('8kg')) {
+    return 'medium';
+  }
+  if (normalized.includes('8') && normalized.includes('15kg')) {
+    return 'medium';
+  }
+  if (normalized.includes('15.1') && normalized.includes('30kg')) {
     return 'large';
   }
-  const numeric = parseFloat(weightLabel);
-  if (Number.isNaN(numeric)) {
-    return 'small';
+  if (normalized.includes('30kg') && (normalized.includes('above') || normalized.includes('&'))) {
+    return 'xlarge';
   }
-  return numeric >= 15 ? 'large' : 'small';
+  
+  // Fallback: parse numeric value
+  const numeric = parseFloat(weightLabel);
+  if (!Number.isNaN(numeric)) {
+    if (numeric <= 5) return 'small';
+    if (numeric <= 8) return 'medium';
+    if (numeric <= 15) return 'medium';
+    if (numeric <= 30) return 'large';
+    return 'xlarge';
+  }
+  
+  console.log('[getWeightCategory] Defaulting to small for:', weightLabel);
+  return 'small';
 }
 
 function getSingleServicePrice(serviceId, weightLabel) {
@@ -945,49 +970,86 @@ async function saveBookings(bookings) {
   }
 }
 
-// Defensive computeBookingCost: ensure packages is an array and handle missing weight label
-async function computeBookingCost(packageId, petWeight, addOns, singleServices) {
-  // Ensure packages variable (or global PACKAGES) is resolved if it's a Promise
-  let packagesData = (typeof PACKAGES !== 'undefined') ? PACKAGES : (typeof packages !== 'undefined' ? packages : null);
-  if (packagesData && typeof packagesData.then === 'function') {
-    try {
-      packagesData = await packagesData;
-    } catch (e) {
-      console.warn('Failed to resolve packages promise', e);
-      packagesData = [];
+// Compute booking cost with full support for packages and single services
+function computeBookingCost(packageId, petWeight, addOns, singleServices) {
+  // Initialize result object
+  const result = {
+    packagePrice: 0,
+    subtotal: 0,
+    bookingFee: 100,
+    totalAmount: 0,
+    totalDueToday: 100,
+    balanceOnVisit: 0,
+    addOns: [],
+    services: [],
+    weightLabel: petWeight || ''
+  };
+
+  // Get packages list
+  let packagesData = [];
+  if (Array.isArray(window.packagesList)) {
+    packagesData = window.packagesList;
+  } else if (typeof PACKAGES !== 'undefined' && Array.isArray(PACKAGES)) {
+    packagesData = PACKAGES;
+  }
+
+  const pkg = packagesData.find(p => p.id === packageId) || null;
+
+  // Handle single service package
+  if (packageId === 'single-service') {
+    result.packagePrice = 0;
+    
+    // Calculate single services total
+    if (Array.isArray(singleServices) && singleServices.length > 0 && petWeight) {
+      singleServices.forEach(serviceId => {
+        const priceInfo = getSingleServicePrice(serviceId, petWeight);
+        if (priceInfo && priceInfo.price > 0) {
+          result.services.push({
+            serviceId: serviceId,
+            label: priceInfo.label || serviceId,
+            price: priceInfo.price
+          });
+          result.subtotal += priceInfo.price;
+        }
+      });
+    }
+  } else if (pkg && pkg.tiers && petWeight) {
+    // Handle regular package with tiers
+    const tier = pkg.tiers.find(t => t.label === petWeight);
+    if (tier) {
+      result.packagePrice = tier.price || 0;
+      result.subtotal = result.packagePrice;
     }
   }
-  if (!Array.isArray(packagesData)) {
-    console.warn('Packages is not an array:', packagesData);
-    packagesData = [];
+
+  // Calculate add-ons
+  if (Array.isArray(addOns) && addOns.length > 0) {
+    addOns.forEach(addonId => {
+      // Find addon in packages
+      const addonPkg = packagesData.find(p => p.id === addonId && p.type === 'addon');
+      if (addonPkg) {
+        let addonPrice = 0;
+        if (addonPkg.tiers && petWeight) {
+          const tier = addonPkg.tiers.find(t => t.label === petWeight);
+          addonPrice = tier?.price || addonPkg.price || 0;
+        } else {
+          addonPrice = addonPkg.price || 0;
+        }
+        result.addOns.push({
+          id: addonId,
+          label: addonPkg.name,
+          price: addonPrice
+        });
+        result.subtotal += addonPrice;
+      }
+    });
   }
 
-  // Replace any use of PACKAGES or packages with packagesData below.
-  // Example minimal fallback behavior when definitions are missing:
-  const pkg = packagesData.find(p => p.id === packageId) || null;
-  // Sample return object to avoid exceptions; adapt to your real logic
-  if (!pkg) {
-    return {
-      subtotal: 0,
-      bookingFee: 0,
-      totalAmount: 0,
-      addOns: []
-    };
-  }
+  // Calculate totals
+  result.totalAmount = result.subtotal;
+  result.balanceOnVisit = Math.max(0, result.subtotal - result.bookingFee);
 
-  // If you have a full implementation below, keep it and just ensure it uses packagesData.
-  // ...existing code...
-}
-
-function computeBookingCost(packageId, weight, addOns, singleServices) {
-  // guard: if packages list is still a Promise, avoid crashing
-  if (window.packagesList && typeof window.packagesList.then === 'function') {
-    console.warn('computeBookingCost: packages still pending — awaiting or skipping expensive calc');
-    // either return a sensible default or ensure callers awaited loading
-    return { subtotal: 0, totalAmount: 0 };
-  }
-  const packages = Array.isArray(window.packagesList) ? window.packagesList : [];
-  // ...existing cost logic...
+  return result;
 }
 
 // Escape HTML to prevent XSS
@@ -1003,7 +1065,9 @@ function generateId() {
   const now = new Date();
   const dateStr = toLocalISO(now);
   const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
-  return `${dateStr}_${timeStr}`;
+  const milliseconds = now.getMilliseconds().toString().padStart(3, '0');
+  const random = Math.random().toString(36).slice(-3).toUpperCase();
+  return `${dateStr}_${timeStr}-${milliseconds}-${random}`;
 }
 
 function generateBookingCode() {
